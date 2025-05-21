@@ -6,8 +6,8 @@ import jax.numpy as jnp
 import jax
 
 import jraph
-import marl_blockchain.rl.BlockchainGraph as BlockchainGraph
-from marl_blockchain.rl.BlockchainGraph import voting_update, partial_reset, get_feature_all_nodes, \
+import rl_blockchain.rl.BlockchainGraph as BlockchainGraph
+from rl_blockchain.rl.BlockchainGraph import voting_update, partial_reset, get_feature_all_nodes, \
     approximate_min_mean_distance
 
 

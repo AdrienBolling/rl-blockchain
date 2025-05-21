@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
-from marl_blockchain.algo.ppo import train_ppo, eval_ppo_and_log
-from marl_blockchain.rl.env import BlockchainEnv_intermediary
+from rl_blockchain.algo.ppo import train_ppo, eval_ppo_and_log
+from rl_blockchain.rl.env import BlockchainEnv_intermediary
 
 
 def make_env_params(key: jnp.ndarray,
