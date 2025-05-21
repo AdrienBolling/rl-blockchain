@@ -49,9 +49,8 @@ def approximate_min_mean_distance(
         node_distance_matrix: jnp.ndarray,
         n_subnodes: int,
         n_samples: int,
+        key,
 ):
-    # Generate a random key
-    key = jax.random.PRNGKey(0)
     # generate a vector of random keys of size n_samples
     keys = jax.random.split(key, n_samples)
     # Compute the mean distance for each key

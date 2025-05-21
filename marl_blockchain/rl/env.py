@@ -32,11 +32,13 @@ class BlockchainEnv_intermediary:
             node_distance_matrix: jnp.ndarray,
             node_features: List[str],
             voting_nodes,
+            random_key: jnp.ndarray,
     ):
         # Parameters
         self.node_distance_matrix = node_distance_matrix
         self.node_features = node_features
         self.voting_nodes = voting_nodes
+        self.key = random_key
 
         # Settings
         self._rewards = ["gini", "distance"]
@@ -45,7 +47,7 @@ class BlockchainEnv_intermediary:
 
         # Compute the approximate shortest mean distance for the environment
         self.shortest_mean_distance = approximate_min_mean_distance(node_distance_matrix, voting_nodes,
-                                                                    node_distance_matrix.shape[0])
+                                                                    node_distance_matrix.shape[0], key=self.key)
 
     @partial(jax.jit, static_argnums=[0])
     def get_first_state(self) -> State:
@@ -240,46 +242,38 @@ class BlockchainEnv_intermediary:
         legal_mask = self._compute_legal_actions(state)
         return (jnp.sum(action * legal_mask) == 0).astype(bool)
 
-    @partial(jax.jit, static_argnums=[0, 3])
-    def step(self, state: State, action: jnp.ndarray, weights: jnp.ndarray) -> (State, float, bool, bool, dict):
-        """
-        Perform a step in the environment.
-
-        Params:
-            state: The current state of the environment.
-            action: The action to take.
-            weights: The weights for the reward computation.
-
-        Returns:
-            The new state of the environment, the reward, whether the environment is done and the infos.
-        """
-        # Normalize the weights
+    @partial(jax.jit, static_argnames=('self',))
+    def step(self, state: State, action: jnp.ndarray, weights: jnp.ndarray):
+        # Normalize weights
         weights = weights / jnp.sum(weights)
 
-        # Compute terminated / truncated
+        # Terminal flag
         terminated = self._compute_terminated(state, action)
 
-        # Perform an inner step
+        # Always do the inner step
         state = self._inner_step(state, action)
 
-        # Perform an outer step if the inner step is done
-        if state.inner_step == self.voting_nodes:
-            state = self._outer_step(state)
+        # Conditionally do the outer step
+        state = jax.lax.cond(
+            state.inner_step == self.voting_nodes,
+            lambda s: self._outer_step(s),
+            lambda s: s,
+            state,
+        )
 
-        # Compute the reward
-        if terminated:
-            reward = -1.0
-        else:
-            reward = self._compute_reward(state, weights)
+        # Conditionally pick -1.0 vs. computed reward
+        reward = jax.lax.select(
+            terminated,
+            -1.0,
+            self._compute_reward(state, weights),
+        )
 
-        # Compute whether the environment is done
-        done = self._compute_done(state)
-
-        # Compute the infos
+        # Done flag and infos
+        done  = self._compute_done(state)
         infos = self._get_infos(state)
 
-        # Return the new state, the reward, whether the environment is done and the infos
         return state, reward, done, infos
+
 
     @partial(jax.jit, static_argnums=[0])
     def sample_legal_action(self, state: State, key):
