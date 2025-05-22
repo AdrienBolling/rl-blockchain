@@ -7,6 +7,102 @@ def _parse_args():
 
     # Create an argument parser
     parser = ArgumentParser(description="Run PPO training or evaluation.")
+    
+    parser.add_argument(
+        "--env",
+        type=str,
+        default="BlockchainEnv_intermediary",
+        help="Environment to use. Default is 'BlockchainEnv_intermediary'.",
+    )
+    parser.add_argument(
+        "--n-nodes",
+        type=int,
+        default=20,
+        help="Number of nodes in the environment. Default is 20.",
+    )
+    parser.add_argument(
+        "--voting-nodes",
+        type=int,
+        default=5,
+        help="Number of voting nodes in the environment. Default is 5.",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=0,
+        help="Random seed for reproducibility. Default is 0.",
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        type=str,
+        default=os.path.join(os.getcwd(), "checkpoints"),
+        help="Directory to save checkpoints. Default is 'checkpoints' in the cwd.",
+    )
+    
+    # Logging args
+    parser.add_argument(
+        "--log-dir",
+        type=str,
+        default=os.path.join(os.getcwd(), "logs"),
+        help="Directory to save logs. Default is 'logs' in the cwd.",
+    )
+    parser.add_argument(
+        "--logging-level",
+        type=str,
+        default="INFO",
+        help="Logging level. Default is 'INFO'.",
+    )
+    parser.add_argument(
+        "--logging-format",
+        type=str,
+        default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        help="Logging format. Default is '%(asctime)s - %(name)s - %(levelname)s - %(message)s'.",
+    )
+    parser.add_argument(
+        "--logging-datefmt",
+        type=str,
+        default="%Y-%m-%d %H:%M:%S",
+        help="Date format for logging. Default is '%Y-%m-%d %H:%M:%S'.",
+    )
+    parser.add_argument(
+        "--logging-filename",
+        type=str,
+        default=None,
+        help="Name of the log file. Default is None (logs to console).",
+    )
+    parser.add_argument(
+        "--logging-filemode",
+        type=str,
+        default="a",
+        help="File mode for logging. Default is 'a' (append).",
+    )
+    parser.add_argument(
+        "--logging-stream",
+        action="store_true",
+        default=False,
+        help="If True, logs to console as well. Default is False.",
+    )
+    
+    # Wandb args
+    parser.add_argument(
+        "--wandb-project",
+        type=str,
+        default="rl_blockchain",
+        help="Wandb project name. Default is 'rl_blockchain'.",
+    )
+    parser.add_argument(
+        "--wandb-entity",
+        type=str,
+        default="bolling-adrien",
+        help="Wandb entity name. Default is 'your_entity'.",
+    )
+    parser.add_argument(
+        "--wandb-tags",
+        nargs="*",
+        type=str,
+        default=["default"],
+        help="Wandb tags for the run. Default is ['default'].",
+    )
 
     algo_subparser = parser.add_subparsers(dest="algo", required=True)
 
@@ -53,7 +149,7 @@ def _parse_args():
         help="Discount factor for future rewards. Default is 0.99.",
     )
     train_parser.add_argument(
-        "--lambda",
+        "--lambda_",
         type=float,
         default=0.95,
         help="GAE lambda parameter. Default is 0.95.",
@@ -78,7 +174,19 @@ def _parse_args():
         default=[64, 64, 64],
         help="GAT architecture as three space separated values (e.g: 64 64 64). Default is [64, 64, 64].",
     )
+    train_parser.add_argument(
+        "--checkpoint",
+        type=str,
+        default=None,
+        help="Name of the checkpoint to load. Default is None. 'latest' will load the latest checkpoint available.",
+    )
+    train_parser.add_argument(
+        "--warm-start",
+        type=bool,
+        default=False,
+        help="If True, warm start the training from the checkpoint. Default is False.",
+    )
 
-    # Create a subparser for the 'eval' mode # TODO
 
-    eval_parser = parser.add_subparsers(dest="eval_mode")
+
+    return parser.parse_args()

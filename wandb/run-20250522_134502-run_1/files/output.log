@@ -1,0 +1,18 @@
+INFO:__main__:Running train mode with PPO algorithm.
+INFO:__main__:Starting training...
+INFO:2025-05-22 13:45:03,101:jax._src.xla_bridge:867: Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: dlopen(libtpu.so, 0x0001): tried: 'libtpu.so' (no such file), '/System/Volumes/Preboot/Cryptexes/OSlibtpu.so' (no such file), '/usr/lib/libtpu.so' (no such file, not in dyld cache), 'libtpu.so' (no such file)
+INFO:jax._src.xla_bridge:Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: dlopen(libtpu.so, 0x0001): tried: 'libtpu.so' (no such file), '/System/Volumes/Preboot/Cryptexes/OSlibtpu.so' (no such file), '/usr/lib/libtpu.so' (no such file, not in dyld cache), 'libtpu.so' (no such file)
+Traceback (most recent call last):
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/./rl_blockchain/scripts/run.py", line 31, in <module>
+    main()
+    ~~~~^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/./rl_blockchain/scripts/run.py", line 21, in main
+    train_ppo(args)
+    ~~~~~~~~~^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/rl_blockchain/scripts/ppo_func.py", line 80, in train_ppo
+    checkpoint_manager = create_checkpoint_manager(
+        checkpoint_dir=chkpt_dir,
+    ...<2 lines>...
+        keep_every_n_epochs=1,
+    )
+TypeError: create_checkpoint_manager() got an unexpected keyword argument 'checkpoint_name'. Did you mean 'checkpoint_dir'?

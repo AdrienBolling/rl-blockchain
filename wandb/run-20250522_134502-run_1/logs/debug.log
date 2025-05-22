@@ -1,0 +1,23 @@
+2025-05-22 13:45:02,134 INFO    MainThread:41425 [wandb_setup.py:_flush():70] Current SDK version is 0.19.11
+2025-05-22 13:45:02,134 INFO    MainThread:41425 [wandb_setup.py:_flush():70] Configure stats pid to 41425
+2025-05-22 13:45:02,134 INFO    MainThread:41425 [wandb_setup.py:_flush():70] Loading settings from /Users/adrien.bolling/.config/wandb/settings
+2025-05-22 13:45:02,134 INFO    MainThread:41425 [wandb_setup.py:_flush():70] Loading settings from /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/wandb/settings
+2025-05-22 13:45:02,134 INFO    MainThread:41425 [wandb_setup.py:_flush():70] Loading settings from environment variables
+2025-05-22 13:45:02,134 INFO    MainThread:41425 [wandb_init.py:setup_run_log_directory():724] Logging user logs to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/wandb/run-20250522_134502-run_1/logs/debug.log
+2025-05-22 13:45:02,134 INFO    MainThread:41425 [wandb_init.py:setup_run_log_directory():725] Logging internal logs to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/wandb/run-20250522_134502-run_1/logs/debug-internal.log
+2025-05-22 13:45:02,134 INFO    MainThread:41425 [wandb_init.py:init():852] calling init triggers
+2025-05-22 13:45:02,134 INFO    MainThread:41425 [wandb_init.py:init():857] wandb.init called with sweep_config: {}
+config: {'env': 'BlockchainEnv_intermediary', 'n_nodes': 20, 'voting_nodes': 5, 'seed': 0, 'checkpoint_dir': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints', 'log_dir': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/logs', 'logging_level': 'INFO', 'logging_format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s', 'logging_datefmt': '%Y-%m-%d %H:%M:%S', 'logging_filename': None, 'logging_filemode': 'a', 'logging_stream': False, 'wandb_project': 'rl_blockchain', 'wandb_entity': 'bolling-adrien', 'wandb_tags': ['default'], 'algo': 'ppo', 'mode': 'train', 'num_epochs': 100, 'num_steps': 1000, 'num_envs': 1, 'batch_size': 64, 'learning_rate': 0.0003, 'gamma': 0.99, 'lambda_': 0.95, 'clip_ratio': 0.2, 'reward_weights': [0.5, 0.5], 'gat_arch': [64, 64, 64], 'checkpoint': None, '_wandb': {}}
+2025-05-22 13:45:02,134 INFO    MainThread:41425 [wandb_init.py:init():893] starting backend
+2025-05-22 13:45:02,134 INFO    MainThread:41425 [wandb_init.py:init():897] sending inform_init request
+2025-05-22 13:45:02,150 INFO    MainThread:41425 [backend.py:_multiprocessing_setup():101] multiprocessing start_methods=spawn,fork,forkserver, using: spawn
+2025-05-22 13:45:02,150 INFO    MainThread:41425 [wandb_init.py:init():907] backend started and connected
+2025-05-22 13:45:02,152 INFO    MainThread:41425 [wandb_init.py:init():1005] updated telemetry
+2025-05-22 13:45:02,175 INFO    MainThread:41425 [wandb_init.py:init():1029] communicating run to backend with 90.0 second timeout
+2025-05-22 13:45:02,986 INFO    MainThread:41425 [wandb_init.py:init():1104] starting run threads in backend
+2025-05-22 13:45:03,074 INFO    MainThread:41425 [wandb_run.py:_console_start():2573] atexit reg
+2025-05-22 13:45:03,075 INFO    MainThread:41425 [wandb_run.py:_redirect():2421] redirect: wrap_raw
+2025-05-22 13:45:03,075 INFO    MainThread:41425 [wandb_run.py:_redirect():2490] Wrapping output streams.
+2025-05-22 13:45:03,075 INFO    MainThread:41425 [wandb_run.py:_redirect():2513] Redirects installed.
+2025-05-22 13:45:03,078 INFO    MainThread:41425 [wandb_init.py:init():1150] run started, returning control to user process
+2025-05-22 13:45:05,375 INFO    MsgRouterThr:41425 [mailbox.py:close():129] [no run ID] Closing mailbox, abandoning 1 handles.

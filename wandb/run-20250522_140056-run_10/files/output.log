@@ -1,0 +1,138 @@
+INFO:__main__:Running train mode with PPO algorithm.
+INFO:__main__:Starting training...
+INFO:2025-05-22 14:00:57,402:jax._src.xla_bridge:867: Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: dlopen(libtpu.so, 0x0001): tried: 'libtpu.so' (no such file), '/System/Volumes/Preboot/Cryptexes/OSlibtpu.so' (no such file), '/usr/lib/libtpu.so' (no such file, not in dyld cache), 'libtpu.so' (no such file)
+INFO:jax._src.xla_bridge:Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: dlopen(libtpu.so, 0x0001): tried: 'libtpu.so' (no such file), '/System/Volumes/Preboot/Cryptexes/OSlibtpu.so' (no such file), '/usr/lib/libtpu.so' (no such file, not in dyld cache), 'libtpu.so' (no such file)
+INFO:absl:[thread=MainThread] Failed to get flag value for EXPERIMENTAL_ORBAX_USE_DISTRIBUTED_PROCESS_ID.
+INFO:absl:[process=0][thread=MainThread] CheckpointManager init: checkpointers=None, item_names=None, item_handlers=None, handler_registry=None
+INFO:absl:Initialized registry DefaultCheckpointHandlerRegistry({('metrics', <class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonSaveArgs'>): <orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonCheckpointHandler object at 0x134132270>, ('metrics', <class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonRestoreArgs'>): <orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonCheckpointHandler object at 0x134132270>}).
+INFO:absl:orbax-checkpoint version: 0.11.13
+INFO:absl:[process=0][thread=MainThread] Using barrier_sync_fn: <function get_barrier_sync_fn.<locals>.<lambda> at 0x13444e3e0> timeout: 600 secs and primary_host=0 for async checkpoint writes
+INFO:absl:Found 0 checkpoint steps in /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_11
+INFO:absl:[process=0][thread=MainThread] CheckpointManager created,  primary_host=0, CheckpointManagerOptions=CheckpointManagerOptions(save_interval_steps=1, max_to_keep=1, keep_time_interval=None, keep_period=None, should_keep_fn=None, best_fn=None, best_mode='max', keep_checkpoints_without_metrics=True, step_prefix=None, step_format_fixed_length=None, step_name_format=None, create=True, cleanup_tmp_directories=False, save_on_steps=frozenset(), single_host_load_and_broadcast=False, todelete_subdir=None, enable_background_delete=False, read_only=False, enable_async_checkpointing=True, async_options=None, multiprocessing_options=MultiprocessingOptions(primary_host=0, active_processes=None, barrier_sync_key_prefix=None), should_save_fn=None, file_options=FileOptions(path_permission_mode=None), save_root_metadata=True, temporary_path_class=None, save_decision_policy=None, prevent_write_metrics=False), root_directory=/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_11: <orbax.checkpoint.checkpoint_manager.CheckpointManager object at 0x134130440>
+Initialized new PPOState.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 0
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_11/0.
+INFO:root:Using ThreadSafeKeyValueSignalingClient
+INFO:absl:No entry found in handler registry for item: default and args with type: <class 'orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardSaveArgs'>. Falling back to global handler registry.
+INFO:absl:Created BasePyTreeCheckpointHandler: use_ocdbt=True, use_zarr3=False, pytree_metadata_options=PyTreeMetadataOptions(support_rich_types=False), array_metadata_store=<orbax.checkpoint._src.metadata.array_metadata_store.Store object at 0x130d46660>
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_11/0.orbax-checkpoint-tmp-0
+INFO:absl:Deferred registration for item: "default". Adding handler `<orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardCheckpointHandler object at 0x1341b8830>` for item "default" and save args `<class 'orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardSaveArgs'>` and restore args `<class 'orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardRestoreArgs'>` to `_handler_registry`.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Wrote Metadata={'item_handlers': None, 'metrics': {}, 'performance_metrics': {}, 'init_timestamp_nsecs': 1747915286893799000, 'commit_timestamp_nsecs': None, 'custom_metadata': {}}, json={"item_handlers": null, "metrics": {}, "performance_metrics": {}, "init_timestamp_nsecs": 1747915286893799000, "commit_timestamp_nsecs": null, "custom_metadata": {}} to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_11/0.orbax-checkpoint-tmp-0/_CHECKPOINT_METADATA
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_11/0.orbax-checkpoint-tmp-0/default.orbax-checkpoint-tmp-1
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 54.3 MiB/s (total bytes: 954.6 KiB) (time elapsed: 17 milliseconds) (per-host)
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_11/0.orbax-checkpoint-tmp-0/default.orbax-checkpoint-tmp-1/array_metadatas/process_0
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_11/0.
+INFO:absl:[process=0][thread=MainThread][step=0] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 0, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_11', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747915286.8862028, 'wait_for_prev_duration_secs': 0.00020503997802734375, 'checkpointer_blocking_start_time': 1747915286.886592, 'checkpointer_blocking_duration_secs': 0.03277897834777832, 'get_old_steps_start_time': 1747915286.919379, 'get_old_steps_duration_secs': 3.0994415283203125e-06, 'checkpoint_manager_blocking_start_time': 1747915286.8860931, 'checkpoint_manager_blocking_duration_secs': 0.033690690994262695}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 0 - Policy Loss: -9.14423942565918, Value Loss: 7.075097560882568
+Traceback (most recent call last):
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/./rl_blockchain/scripts/run.py", line 31, in <module>
+    main()
+    ~~~~^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/./rl_blockchain/scripts/run.py", line 21, in main
+    train_ppo(args)
+    ~~~~~~~~~^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/rl_blockchain/scripts/ppo_func.py", line 108, in train_ppo
+    ppo_state, policy_loss, value_loss = train_epoch(
+                                         ~~~~~~~~~~~^
+        ppo_state=ppo_state,
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<13 lines>...
+        gat2_nodes_out=gat2_nodes_out,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/rl_blockchain/algo/ppo.py", line 465, in train_epoch
+    key, *subkeys = jax.random.split(ppo_state.rng_key, num_envs + 1)
+                    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/random.py", line 292, in split
+    typed_key, wrapped = _check_prng_key("split", key)
+                         ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/random.py", line 101, in _check_prng_key
+    raise ValueError(f"{name} accepts a single key, but was given a key array of"
+                     f" shape {np.shape(key)} != (). Use jax.vmap for batching.")
+ValueError: split accepts a single key, but was given a key array of shape (1, 2) != (). Use jax.vmap for batching.
+ERROR:absl:[process=0] Failed to run 3 Handler Commit operations or the Commit callback in background save thread, directory: /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_11/0
+Traceback (most recent call last):
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/checkpointers/async_checkpointer.py", line 208, in _thread_func
+    _background_wait_for_commit_futures(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        directory,
+        ^^^^^^^^^^
+    ...<4 lines>...
+        primary_host=self._primary_host,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/checkpointers/async_checkpointer.py", line 86, in _background_wait_for_commit_futures
+    commit_future.result()
+    ~~~~~~~~~~~~~~~~~~~~^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/futures/future.py", line 174, in result
+    f.result(timeout=time_remaining)
+    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/futures/future.py", line 397, in result
+    return self._f.result(timeout=timeout)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/futures/future.py", line 348, in result
+    return self._t.result(timeout=timeout)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/futures/future.py", line 297, in result
+    self.join(timeout=timeout)
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/futures/future.py", line 294, in join
+    raise self._exception
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/futures/future.py", line 281, in run
+    super().run()
+    ~~~~~~~~~~~^^
+  File "/Users/adrien.bolling/.local/share/uv/python/cpython-3.13.1-macos-aarch64-none/lib/python3.13/threading.py", line 992, in run
+    self._target(*self._args, **self._kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/futures/future.py", line 230, in _target_setting_result
+    self._result = target()
+                   ~~~~~~^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/futures/future.py", line 341, in <lambda>
+    target=lambda: asyncio_utils.run_sync(coro),
+                   ~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/asyncio_utils.py", line 50, in run_sync
+    return asyncio.run(coro)
+           ~~~~~~~~~~~^^^^^^
+  File "/Users/adrien.bolling/.local/share/uv/python/cpython-3.13.1-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/Users/adrien.bolling/.local/share/uv/python/cpython-3.13.1-macos-aarch64-none/lib/python3.13/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/Users/adrien.bolling/.local/share/uv/python/cpython-3.13.1-macos-aarch64-none/lib/python3.13/asyncio/base_events.py", line 720, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/handlers/base_pytree_checkpoint_handler.py", line 897, in _write_metadata_after_commits
+    param_infos = await self._get_param_infos_with_write_shape(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        param_infos, checkpoint_dir, self._array_metadata_store
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/handlers/base_pytree_checkpoint_handler.py", line 803, in _get_param_infos_with_write_shape
+    array_metadatas = await array_metadata_store.read(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        checkpoint_dir, process_index=process_index
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/orbax/checkpoint/_src/metadata/array_metadata_store.py", line 234, in read
+    if not await asyncio.to_thread(checkpoint_dir.exists):
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/.local/share/uv/python/cpython-3.13.1-macos-aarch64-none/lib/python3.13/asyncio/threads.py", line 25, in to_thread
+    return await loop.run_in_executor(None, func_call)
+                 ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/.local/share/uv/python/cpython-3.13.1-macos-aarch64-none/lib/python3.13/asyncio/base_events.py", line 896, in run_in_executor
+    executor.submit(func, *args), loop=self)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/.local/share/uv/python/cpython-3.13.1-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py", line 171, in submit
+    raise RuntimeError('cannot schedule new futures after shutdown')
+RuntimeError: cannot schedule new futures after shutdown
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.

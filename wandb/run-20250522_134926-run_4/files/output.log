@@ -1,0 +1,25 @@
+INFO:__main__:Running train mode with PPO algorithm.
+INFO:__main__:Starting training...
+INFO:2025-05-22 13:49:26,829:jax._src.xla_bridge:867: Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: dlopen(libtpu.so, 0x0001): tried: 'libtpu.so' (no such file), '/System/Volumes/Preboot/Cryptexes/OSlibtpu.so' (no such file), '/usr/lib/libtpu.so' (no such file, not in dyld cache), 'libtpu.so' (no such file)
+INFO:jax._src.xla_bridge:Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: dlopen(libtpu.so, 0x0001): tried: 'libtpu.so' (no such file), '/System/Volumes/Preboot/Cryptexes/OSlibtpu.so' (no such file), '/usr/lib/libtpu.so' (no such file, not in dyld cache), 'libtpu.so' (no such file)
+Traceback (most recent call last):
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/./rl_blockchain/scripts/run.py", line 31, in <module>
+    main()
+    ~~~~^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/./rl_blockchain/scripts/run.py", line 21, in main
+    train_ppo(args)
+    ~~~~~~~~~^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/rl_blockchain/scripts/ppo_func.py", line 80, in train_ppo
+    checkpoint_manager = create_checkpoint_manager(
+        checkpoint_dir=chkpt_dir,
+        max_to_keep=1,
+        save_interval_steps=1,
+    )
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/rl_blockchain/algo/ppo.py", line 543, in create_checkpoint_manager
+    checkpoint_dir = Path(checkpoint_dir)
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/matplotlib/path.py", line 129, in __init__
+    vertices = _to_unmasked_float_array(vertices)
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/matplotlib/cbook.py", line 1355, in _to_unmasked_float_array
+    return np.asarray(x, float)
+           ~~~~~~~~~~^^^^^^^^^^
+ValueError: could not convert string to float: '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_5'

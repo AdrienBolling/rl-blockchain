@@ -1,0 +1,13 @@
+INFO:__main__:Running train mode with PPO algorithm.
+INFO:__main__:Starting training...
+Traceback (most recent call last):
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/./rl_blockchain/scripts/run.py", line 31, in <module>
+    main()
+    ~~~~^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/./rl_blockchain/scripts/run.py", line 21, in main
+    train_ppo(args)
+    ~~~~~~~~~^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/rl_blockchain/scripts/ppo_func.py", line 42, in train_ppo
+    lambda_ = ARGS.lambda_
+              ^^^^^^^^^^^^
+AttributeError: 'Namespace' object has no attribute 'lambda_'. Did you mean: 'lambda'?

@@ -1,0 +1,20 @@
+{
+  "os": "macOS-14.5-arm64-arm-64bit-Mach-O",
+  "python": "CPython 3.13.1",
+  "startedAt": "2025-05-22T11:44:33.484027Z",
+  "args": [
+    "ppo",
+    "train"
+  ],
+  "program": "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/./rl_blockchain/scripts/run.py",
+  "codePath": "rl_blockchain/scripts/run.py",
+  "git": {
+    "remote": "https://github.com/AdrienBolling/marl-blockchain.git",
+    "commit": "d881b86647f59dcead7dd578bbf719fa643376da"
+  },
+  "email": "bolling.adrien@gmail.com",
+  "root": "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain",
+  "host": "UNICNGWTX14PD",
+  "executable": "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/bin/python3",
+  "codePathLocal": "rl_blockchain/scripts/run.py"
+}

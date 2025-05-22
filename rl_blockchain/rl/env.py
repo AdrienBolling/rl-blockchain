@@ -30,13 +30,12 @@ class BlockchainEnv_intermediary:
     def __init__(
             self,
             node_distance_matrix: jnp.ndarray,
-            node_features: List[str],
             voting_nodes,
             random_key: jnp.ndarray,
     ):
         # Parameters
         self.node_distance_matrix = node_distance_matrix
-        self.node_features = node_features
+        self.node_features = ["node_id", "chosen", "distrib_chosen"]
         self.voting_nodes = voting_nodes
         self.key = random_key
 

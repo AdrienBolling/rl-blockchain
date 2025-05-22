@@ -6,7 +6,6 @@ from rl_blockchain.rl.env import BlockchainEnv_intermediary
 
 def make_env_params(key: jnp.ndarray,
                      n_nodes: int = 5,
-                     n_features: int = 3,
                      voting_nodes: int = 2):
     """
     Create synthetic environment parameters for a quick test run.
@@ -19,10 +18,8 @@ def make_env_params(key: jnp.ndarray,
     # Random symmetric distance matrix
     A = jax.random.uniform(key, (n_nodes, n_nodes))
     dist = (A + A.T) * 0.5
-    node_features = [f"f{i}" for i in range(n_features)]
     return {
         "node_distance_matrix": dist,
-        "node_features": node_features,
         "voting_nodes": voting_nodes,
         "random_key": subkey,
     }

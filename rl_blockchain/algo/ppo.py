@@ -1,5 +1,6 @@
 from functools import partial
-from typing import Any, Callable, Dict, Optional
+import os
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import jax
 import jax.numpy as jnp
@@ -437,78 +438,6 @@ def eval_ppo_and_log(env_fn, env_params, ppo_state, reward_weights, num_episodes
     avg = sum(returns) / len(returns)
     print(f"Eval over {num_episodes} eps: avg return={avg:.3f}")
 
-
-def create_ppo_state(
-    checkpoint_manager,
-    resume_dir: Optional[Path],
-    warm_start: bool,
-    env_fn: Callable[..., Any],
-    env_params: Dict[str, Any],
-    seed: int,
-    lr: float,
-    gat1_out: int,
-    gat2_out: int,
-    gat2_nodes_out: int
-) -> PPOState:
-    """
-    Initialize or restore a PPOState. If `resume_dir` is provided, loads the latest checkpoint;
-    if `warm_start` is True, reinitializes optimizer states with loaded network weights.
-    Otherwise, initializes networks and optimizers with given hyperparameters.
-    """
-    handler = ocp.PyTreeCheckpointer()
-    if resume_dir:
-        ckpt_dirs = sorted(
-            Path(resume_dir).glob("checkpoint_*"),
-            key=lambda p: int(p.name.split("_")[-1])
-        )
-        if not ckpt_dirs:
-            raise ValueError(f"No checkpoints found in {resume_dir}")
-        latest_ckpt = ckpt_dirs[-1]
-        state = handler.restore(str(latest_ckpt), target=None)
-        print(f"Loaded checkpoint from {latest_ckpt}")
-        if warm_start:
-            pol_opt = optax.adam(lr)
-            val_opt = optax.adam(lr)
-            state = state.replace(
-                policy_opt_state=pol_opt.init(state.policy_params),
-                value_opt_state=val_opt.init(state.value_params)
-            )
-            print("Optimizer states reinitialized for warm start.")
-        return state
-
-    # Fresh initialization
-    key = jax.random.PRNGKey(seed)
-    env = env_fn(**env_params)
-    init_state = env.reset()
-    dummy_graph = init_state.blockchain
-    key, subkey = jax.random.split(key)
-    dummy_act = env.sample_legal_action(init_state, key=subkey)
-
-    # Build networks
-    pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, dummy_act.shape[0])
-    val_net = ValueNET_GAT(gat1_out, gat2_out, gat2_nodes_out)
-
-    # Initialize network parameters
-    pol_vars = pol_net.init(subkey, dummy_graph)
-    key, subkey = jax.random.split(key)
-    val_vars = val_net.init(subkey, dummy_graph)
-
-    # Setup optimizers
-    pol_opt = optax.adam(lr)
-    val_opt = optax.adam(lr)
-    pol_opt_state = pol_opt.init(pol_vars)
-    val_opt_state = val_opt.init(val_vars)
-
-    print("Initialized new PPOState.")
-    return PPOState(
-        policy_params=pol_vars,
-        value_params=val_vars,
-        policy_opt_state=pol_opt_state,
-        value_opt_state=val_opt_state,
-        rng_key=key
-    )
-
-
 def train_epoch(
     ppo_state: PPOState,
     epoch: int,
@@ -525,7 +454,7 @@ def train_epoch(
     gat1_out: int,
     gat2_out: int,
     gat2_nodes_out: int
-) -> PPOState:
+) -> Tuple[PPOState, float, float]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
@@ -557,7 +486,7 @@ def train_epoch(
         )
 
     vm_rollout = jax.vmap(single_rollout)
-    states, acts, logps, rews, dones, vals, last_states, final_key = vm_rollout(subkeys)
+    states, acts, logps, rews, dones, vals, last_states, _ = vm_rollout(subkeys)
 
     # Compute advantages and returns
     advantages = jax.vmap(
@@ -577,14 +506,14 @@ def train_epoch(
     flat_lp  = flatten(logps)
     flat_r   = flatten(returns)
     flat_adv = flatten(advantages)
-    flat_graphs = jax.tree_map(lambda x: flatten(x), states.blockchain)
+    flat_graphs = jax.tree.map(lambda x: flatten(x), states.blockchain)
 
     # Shuffle and minibatch updates
     perm = jax.random.permutation(key, flat_a.shape[0])
     for start in range(0, perm.shape[0], batch_size):
         idx = perm[start: start + batch_size]
-        batch_graphs = jax.tree_map(lambda x: x[idx], flat_graphs)
-        ppo_state, _, _ = update_ppo(
+        batch_graphs = jax.tree.map(lambda x: x[idx], flat_graphs)
+        ppo_state, policy_loss, value_loss = update_ppo(
             ppo_state,
             batch_graphs,
             flat_a[idx],
@@ -599,6 +528,95 @@ def train_epoch(
         )
 
     # Update RNG and log progress
-    ppo_state = ppo_state.replace(rng_key=final_key)
-    print(f"Epoch {epoch} complete.")
-    return ppo_state
+    ppo_state = ppo_state.replace(rng_key=key)
+    return ppo_state, policy_loss, value_loss
+
+def create_checkpoint_manager(
+    checkpoint_dir: Union[str, Path],
+    max_to_keep: int = 5,
+    save_interval_steps: int = 1
+) -> ocp.CheckpointManager:
+    """
+    Build and return an Orbax CheckpointManager that will keep at most
+    `max_to_keep` checkpoints and only saves every `save_interval_steps`.
+    """
+    # make sure the directory exists
+
+    os.makedirs(checkpoint_dir, exist_ok=True)
+
+    options = ocp.CheckpointManagerOptions(
+        max_to_keep=max_to_keep,
+        save_interval_steps=save_interval_steps,
+        create=True,
+    )
+    manager = ocp.CheckpointManager(
+        str(checkpoint_dir),
+        options=options,
+    )
+    return manager
+
+# Modified create_ppo_state to use the manager
+def create_ppo_state(
+    checkpoint_manager: ocp.CheckpointManager,
+    resume_dir: Optional[Path],
+    warm_start: bool,
+    env_fn: Callable[..., Any],
+    env_params: Dict[str, Any],
+    seed: int,
+    lr: float,
+    gat1_out: int,
+    gat2_out: int,
+    gat2_nodes_out: int
+) -> PPOState:
+    """
+    Initialize or restore a PPOState.  If `resume_dir` is provided, uses
+    `checkpoint_manager` to restore the latest checkpoint; if `warm_start`
+    is True, reinitializes optimizer states with loaded network weights.
+    Otherwise, does a fresh init.
+    """
+    # --- restore path ---
+    if resume_dir:
+        step = checkpoint_manager.latest_step()
+        if step is None:
+            raise ValueError(f"No checkpoints found in {resume_dir}")
+        # restore the entire PPOState PYTree
+        state: PPOState = checkpoint_manager.restore(step)
+        print(f"Loaded checkpoint from step {step}")
+        if warm_start:
+            pol_opt = optax.adam(lr)
+            val_opt = optax.adam(lr)
+            state = state.replace(
+                policy_opt_state=pol_opt.init(state.policy_params),
+                value_opt_state=val_opt.init(state.value_params)
+            )
+            print("Optimizer states reinitialized for warm start.")
+        return state
+
+    # --- fresh initialization ---
+    key = jax.random.PRNGKey(seed)
+    env = env_fn(**env_params)
+    init_state = env.reset()
+    dummy_graph = init_state.blockchain
+    key, subkey = jax.random.split(key)
+    dummy_act = env.sample_legal_action(init_state, key=subkey)
+
+    pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, dummy_act.shape[0])
+    val_net = ValueNET_GAT(gat1_out, gat2_out, gat2_nodes_out)
+
+    pol_vars = pol_net.init(subkey, dummy_graph)
+    key, subkey = jax.random.split(key)
+    val_vars = val_net.init(subkey, dummy_graph)
+
+    pol_opt = optax.adam(lr)
+    val_opt = optax.adam(lr)
+    pol_opt_state = pol_opt.init(pol_vars)
+    val_opt_state = val_opt.init(val_vars)
+
+    print("Initialized new PPOState.")
+    return PPOState(
+        policy_params=pol_vars,
+        value_params=val_vars,
+        policy_opt_state=pol_opt_state,
+        value_opt_state=val_opt_state,
+        rng_key=key
+    )

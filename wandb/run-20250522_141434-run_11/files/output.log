@@ -1,0 +1,505 @@
+INFO:__main__:Running train mode with PPO algorithm.
+INFO:__main__:Starting training...
+INFO:2025-05-22 14:14:35,947:jax._src.xla_bridge:867: Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: dlopen(libtpu.so, 0x0001): tried: 'libtpu.so' (no such file), '/System/Volumes/Preboot/Cryptexes/OSlibtpu.so' (no such file), '/usr/lib/libtpu.so' (no such file, not in dyld cache), 'libtpu.so' (no such file)
+INFO:jax._src.xla_bridge:Unable to initialize backend 'tpu': INTERNAL: Failed to open libtpu.so: dlopen(libtpu.so, 0x0001): tried: 'libtpu.so' (no such file), '/System/Volumes/Preboot/Cryptexes/OSlibtpu.so' (no such file), '/usr/lib/libtpu.so' (no such file, not in dyld cache), 'libtpu.so' (no such file)
+INFO:absl:[thread=MainThread] Failed to get flag value for EXPERIMENTAL_ORBAX_USE_DISTRIBUTED_PROCESS_ID.
+INFO:absl:[process=0][thread=MainThread] CheckpointManager init: checkpointers=None, item_names=None, item_handlers=None, handler_registry=None
+INFO:absl:Initialized registry DefaultCheckpointHandlerRegistry({('metrics', <class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonSaveArgs'>): <orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonCheckpointHandler object at 0x130c46270>, ('metrics', <class 'orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonRestoreArgs'>): <orbax.checkpoint._src.handlers.json_checkpoint_handler.JsonCheckpointHandler object at 0x130c46270>}).
+INFO:absl:orbax-checkpoint version: 0.11.13
+INFO:absl:[process=0][thread=MainThread] Using barrier_sync_fn: <function get_barrier_sync_fn.<locals>.<lambda> at 0x130e4aa20> timeout: 600 secs and primary_host=0 for async checkpoint writes
+INFO:absl:Found 0 checkpoint steps in /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12
+INFO:absl:[process=0][thread=MainThread] CheckpointManager created,  primary_host=0, CheckpointManagerOptions=CheckpointManagerOptions(save_interval_steps=1, max_to_keep=1, keep_time_interval=None, keep_period=None, should_keep_fn=None, best_fn=None, best_mode='max', keep_checkpoints_without_metrics=True, step_prefix=None, step_format_fixed_length=None, step_name_format=None, create=True, cleanup_tmp_directories=False, save_on_steps=frozenset(), single_host_load_and_broadcast=False, todelete_subdir=None, enable_background_delete=False, read_only=False, enable_async_checkpointing=True, async_options=None, multiprocessing_options=MultiprocessingOptions(primary_host=0, active_processes=None, barrier_sync_key_prefix=None), should_save_fn=None, file_options=FileOptions(path_permission_mode=None), save_root_metadata=True, temporary_path_class=None, save_decision_policy=None, prevent_write_metrics=False), root_directory=/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12: <orbax.checkpoint.checkpoint_manager.CheckpointManager object at 0x130c44440>
+Initialized new PPOState.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 0
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0.
+INFO:root:Using ThreadSafeKeyValueSignalingClient
+INFO:absl:No entry found in handler registry for item: default and args with type: <class 'orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardSaveArgs'>. Falling back to global handler registry.
+INFO:absl:Created BasePyTreeCheckpointHandler: use_ocdbt=True, use_zarr3=False, pytree_metadata_options=PyTreeMetadataOptions(support_rich_types=False), array_metadata_store=<orbax.checkpoint._src.metadata.array_metadata_store.Store object at 0x127a46660>
+INFO:absl:Deferred registration for item: "default". Adding handler `<orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardCheckpointHandler object at 0x130cc8830>` for item "default" and save args `<class 'orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardSaveArgs'>` and restore args `<class 'orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardRestoreArgs'>` to `_handler_registry`.
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0.orbax-checkpoint-tmp-0
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Wrote Metadata={'item_handlers': None, 'metrics': {}, 'performance_metrics': {}, 'init_timestamp_nsecs': 1747916104404147000, 'commit_timestamp_nsecs': None, 'custom_metadata': {}}, json={"item_handlers": null, "metrics": {}, "performance_metrics": {}, "init_timestamp_nsecs": 1747916104404147000, "commit_timestamp_nsecs": null, "custom_metadata": {}} to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0.orbax-checkpoint-tmp-0/_CHECKPOINT_METADATA
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0.orbax-checkpoint-tmp-0/default.orbax-checkpoint-tmp-1
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 60.8 MiB/s (total bytes: 954.6 KiB) (time elapsed: 15 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0.
+INFO:absl:[process=0][thread=MainThread][step=0] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 0, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916104.39618, 'wait_for_prev_duration_secs': 0.00021505355834960938, 'checkpointer_blocking_start_time': 1747916104.396595, 'checkpointer_blocking_duration_secs': 0.0318140983581543, 'get_old_steps_start_time': 1747916104.4284182, 'get_old_steps_duration_secs': 1.9073486328125e-06, 'checkpoint_manager_blocking_start_time': 1747916104.396099, 'checkpoint_manager_blocking_duration_secs': 0.03261685371398926}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 0 - Policy Loss: -9.14423942565918, Value Loss: 7.075097560882568
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0.orbax-checkpoint-tmp-0/default.orbax-checkpoint-tmp-1/array_metadatas/process_0
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 9.7 MiB/s (total bytes: 954.6 KiB) (time elapsed: 96 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:Read Metadata={'item_handlers': None, 'metrics': {}, 'performance_metrics': {}, 'init_timestamp_nsecs': 1747916104404147000, 'commit_timestamp_nsecs': None, 'custom_metadata': {}} from /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0.orbax-checkpoint-tmp-0/_CHECKPOINT_METADATA
+INFO:absl:Updated Metadata={'item_handlers': {'default': 'orbax.checkpoint._src.handlers.standard_checkpoint_handler.StandardCheckpointHandler'}, 'metrics': {}, 'performance_metrics': {}, 'init_timestamp_nsecs': 1747916104404147000, 'commit_timestamp_nsecs': None, 'custom_metadata': {}} to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0.orbax-checkpoint-tmp-0/_CHECKPOINT_METADATA
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0.orbax-checkpoint-tmp-0/default.orbax-checkpoint-tmp-1 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0.orbax-checkpoint-tmp-0/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0.orbax-checkpoint-tmp-0 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.11 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/0
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize][step=0] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=0] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 1
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/1.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/1.orbax-checkpoint-tmp-2
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/1.orbax-checkpoint-tmp-2/default.orbax-checkpoint-tmp-3
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 50.3 MiB/s (total bytes: 954.6 KiB) (time elapsed: 18 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/1.
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/1.orbax-checkpoint-tmp-2/default.orbax-checkpoint-tmp-3/array_metadatas/process_0
+INFO:absl:Deleting Checkpoint[step=0 | time=2025-05-22 12:15:04.428413+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=1] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 1, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916125.0987892, 'wait_for_prev_duration_secs': 0.000209808349609375, 'checkpointer_blocking_start_time': 1747916125.099199, 'checkpointer_blocking_duration_secs': 0.029536962509155273, 'get_old_steps_start_time': 1747916125.128742, 'get_old_steps_duration_secs': 0.0003261566162109375, 'checkpoint_manager_blocking_start_time': 1747916125.098706, 'checkpoint_manager_blocking_duration_secs': 0.030888080596923828}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 1 - Policy Loss: -11.966821670532227, Value Loss: 22.140140533447266
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 10.4 MiB/s (total bytes: 954.6 KiB) (time elapsed: 89 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/1.orbax-checkpoint-tmp-2/default.orbax-checkpoint-tmp-3 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/1.orbax-checkpoint-tmp-2/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/1.orbax-checkpoint-tmp-2 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/1
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/1`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.37 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/1
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 0.
+INFO:absl:[process=0][thread=save_finalize][step=1] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=1] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 2
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/2.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/2.orbax-checkpoint-tmp-4
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/2.orbax-checkpoint-tmp-4/default.orbax-checkpoint-tmp-5
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 50.8 MiB/s (total bytes: 954.6 KiB) (time elapsed: 18 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/2.
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/2.orbax-checkpoint-tmp-4/default.orbax-checkpoint-tmp-5/array_metadatas/process_0
+INFO:absl:Deleting Checkpoint[step=1 | time=2025-05-22 12:15:25.128740+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=2] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 2, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916146.144237, 'wait_for_prev_duration_secs': 0.0001747608184814453, 'checkpointer_blocking_start_time': 1747916146.144583, 'checkpointer_blocking_duration_secs': 0.029246091842651367, 'get_old_steps_start_time': 1747916146.173836, 'get_old_steps_duration_secs': 0.0003941059112548828, 'checkpoint_manager_blocking_start_time': 1747916146.1441789, 'checkpoint_manager_blocking_duration_secs': 0.030488252639770508}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 2 - Policy Loss: -10.785857200622559, Value Loss: 13.771697998046875
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 11.2 MiB/s (total bytes: 954.6 KiB) (time elapsed: 82 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/2.orbax-checkpoint-tmp-4/default.orbax-checkpoint-tmp-5 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/2.orbax-checkpoint-tmp-4/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/2.orbax-checkpoint-tmp-4 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/2
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/2`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.09 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/2
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 1.
+INFO:absl:[process=0][thread=save_finalize][step=2] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=2] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 3
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/3.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/3.orbax-checkpoint-tmp-6
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/3.orbax-checkpoint-tmp-6/default.orbax-checkpoint-tmp-7
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 51.3 MiB/s (total bytes: 954.6 KiB) (time elapsed: 18 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/3.orbax-checkpoint-tmp-6/default.orbax-checkpoint-tmp-7/array_metadatas/process_0
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/3.
+INFO:absl:Deleting Checkpoint[step=2 | time=2025-05-22 12:15:46.173832+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=3] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 3, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916167.1370492, 'wait_for_prev_duration_secs': 0.0002148151397705078, 'checkpointer_blocking_start_time': 1747916167.137441, 'checkpointer_blocking_duration_secs': 0.028979063034057617, 'get_old_steps_start_time': 1747916167.166423, 'get_old_steps_duration_secs': 0.0001239776611328125, 'checkpoint_manager_blocking_start_time': 1747916167.136978, 'checkpoint_manager_blocking_duration_secs': 0.0298459529876709}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 3 - Policy Loss: -9.204390525817871, Value Loss: 18.484655380249023
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 10.9 MiB/s (total bytes: 954.6 KiB) (time elapsed: 85 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/3.orbax-checkpoint-tmp-6/default.orbax-checkpoint-tmp-7 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/3.orbax-checkpoint-tmp-6/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/3.orbax-checkpoint-tmp-6 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/3
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/3`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.35 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/3
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 2.
+INFO:absl:[process=0][thread=save_finalize][step=3] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=3] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 4
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/4.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/4.orbax-checkpoint-tmp-8
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/4.orbax-checkpoint-tmp-8/default.orbax-checkpoint-tmp-9
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 48.9 MiB/s (total bytes: 954.6 KiB) (time elapsed: 19 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/4.orbax-checkpoint-tmp-8/default.orbax-checkpoint-tmp-9/array_metadatas/process_0
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/4.
+INFO:absl:Deleting Checkpoint[step=3 | time=2025-05-22 12:16:07.166421+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=4] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 4, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916188.232482, 'wait_for_prev_duration_secs': 0.00019788742065429688, 'checkpointer_blocking_start_time': 1747916188.2328541, 'checkpointer_blocking_duration_secs': 0.03287696838378906, 'get_old_steps_start_time': 1747916188.2657359, 'get_old_steps_duration_secs': 0.00018310546875, 'checkpoint_manager_blocking_start_time': 1747916188.232414, 'checkpoint_manager_blocking_duration_secs': 0.03397703170776367}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 4 - Policy Loss: -8.32286262512207, Value Loss: 16.37711524963379
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 10.4 MiB/s (total bytes: 954.6 KiB) (time elapsed: 89 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/4.orbax-checkpoint-tmp-8/default.orbax-checkpoint-tmp-9 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/4.orbax-checkpoint-tmp-8/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/4.orbax-checkpoint-tmp-8 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/4
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/4`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.39 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/4
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 3.
+INFO:absl:[process=0][thread=save_finalize][step=4] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=4] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 5
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/5.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/5.orbax-checkpoint-tmp-10
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/5.orbax-checkpoint-tmp-10/default.orbax-checkpoint-tmp-11
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 58.7 MiB/s (total bytes: 954.6 KiB) (time elapsed: 15 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/5.
+INFO:absl:Deleting Checkpoint[step=4 | time=2025-05-22 12:16:28.265734+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=5] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 5, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916209.043315, 'wait_for_prev_duration_secs': 0.00016617774963378906, 'checkpointer_blocking_start_time': 1747916209.043651, 'checkpointer_blocking_duration_secs': 0.02850198745727539, 'get_old_steps_start_time': 1747916209.072157, 'get_old_steps_duration_secs': 0.00016307830810546875, 'checkpoint_manager_blocking_start_time': 1747916209.043263, 'checkpoint_manager_blocking_duration_secs': 0.029328107833862305}
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/5.orbax-checkpoint-tmp-10/default.orbax-checkpoint-tmp-11/array_metadatas/process_0
+INFO:rl_blockchain.scripts.ppo_func:Epoch 5 - Policy Loss: -7.180877685546875, Value Loss: 9.897852897644043
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 11.4 MiB/s (total bytes: 954.6 KiB) (time elapsed: 82 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/5.orbax-checkpoint-tmp-10/default.orbax-checkpoint-tmp-11 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/5.orbax-checkpoint-tmp-10/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/5.orbax-checkpoint-tmp-10 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/5
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/5`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.09 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/5
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 4.
+INFO:absl:[process=0][thread=save_finalize][step=5] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=5] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 6
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/6.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/6.orbax-checkpoint-tmp-12
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/6.orbax-checkpoint-tmp-12/default.orbax-checkpoint-tmp-13
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 49.8 MiB/s (total bytes: 954.6 KiB) (time elapsed: 18 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/6.
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/6.orbax-checkpoint-tmp-12/default.orbax-checkpoint-tmp-13/array_metadatas/process_0
+INFO:absl:Deleting Checkpoint[step=5 | time=2025-05-22 12:16:49.072155+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=6] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 6, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916229.893566, 'wait_for_prev_duration_secs': 0.00018405914306640625, 'checkpointer_blocking_start_time': 1747916229.8939352, 'checkpointer_blocking_duration_secs': 0.029941797256469727, 'get_old_steps_start_time': 1747916229.923881, 'get_old_steps_duration_secs': 0.00047087669372558594, 'checkpoint_manager_blocking_start_time': 1747916229.8935082, 'checkpoint_manager_blocking_duration_secs': 0.0312650203704834}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 6 - Policy Loss: -6.467750072479248, Value Loss: 7.423913478851318
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 10.4 MiB/s (total bytes: 954.6 KiB) (time elapsed: 89 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/6.orbax-checkpoint-tmp-12/default.orbax-checkpoint-tmp-13 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/6.orbax-checkpoint-tmp-12/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/6.orbax-checkpoint-tmp-12 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/6
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/6`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.10 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/6
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 5.
+INFO:absl:[process=0][thread=save_finalize][step=6] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=6] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 7
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/7.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/7.orbax-checkpoint-tmp-14
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/7.orbax-checkpoint-tmp-14/default.orbax-checkpoint-tmp-15
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 52.7 MiB/s (total bytes: 954.6 KiB) (time elapsed: 17 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/7.orbax-checkpoint-tmp-14/default.orbax-checkpoint-tmp-15/array_metadatas/process_0
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/7.
+INFO:absl:Deleting Checkpoint[step=6 | time=2025-05-22 12:17:09.923879+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=7] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 7, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916251.06761, 'wait_for_prev_duration_secs': 0.00015997886657714844, 'checkpointer_blocking_start_time': 1747916251.067938, 'checkpointer_blocking_duration_secs': 0.02926492691040039, 'get_old_steps_start_time': 1747916251.097208, 'get_old_steps_duration_secs': 0.0001480579376220703, 'checkpoint_manager_blocking_start_time': 1747916251.067544, 'checkpoint_manager_blocking_duration_secs': 0.030226945877075195}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 7 - Policy Loss: -5.520325660705566, Value Loss: 1.2456549406051636
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 11.2 MiB/s (total bytes: 954.6 KiB) (time elapsed: 83 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/7.orbax-checkpoint-tmp-14/default.orbax-checkpoint-tmp-15 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/7.orbax-checkpoint-tmp-14/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/7.orbax-checkpoint-tmp-14 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/7
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/7`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.10 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/7
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 6.
+INFO:absl:[process=0][thread=save_finalize][step=7] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=7] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 8
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/8.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/8.orbax-checkpoint-tmp-16
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/8.orbax-checkpoint-tmp-16/default.orbax-checkpoint-tmp-17
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 52.5 MiB/s (total bytes: 954.6 KiB) (time elapsed: 17 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/8.
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/8.orbax-checkpoint-tmp-16/default.orbax-checkpoint-tmp-17/array_metadatas/process_0
+INFO:absl:Deleting Checkpoint[step=7 | time=2025-05-22 12:17:31.097205+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=8] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 8, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916273.6270158, 'wait_for_prev_duration_secs': 0.00018215179443359375, 'checkpointer_blocking_start_time': 1747916273.627372, 'checkpointer_blocking_duration_secs': 0.0297548770904541, 'get_old_steps_start_time': 1747916273.657131, 'get_old_steps_duration_secs': 0.000965118408203125, 'checkpoint_manager_blocking_start_time': 1747916273.626944, 'checkpoint_manager_blocking_duration_secs': 0.03140401840209961}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 8 - Policy Loss: -4.491866588592529, Value Loss: 0.11365856230258942
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 11.1 MiB/s (total bytes: 954.6 KiB) (time elapsed: 84 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/8.orbax-checkpoint-tmp-16/default.orbax-checkpoint-tmp-17 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/8.orbax-checkpoint-tmp-16/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/8.orbax-checkpoint-tmp-16 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/8
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/8`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.09 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/8
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 7.
+INFO:absl:[process=0][thread=save_finalize][step=8] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=8] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 9
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/9.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/9.orbax-checkpoint-tmp-18
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/9.orbax-checkpoint-tmp-18/default.orbax-checkpoint-tmp-19
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 53.0 MiB/s (total bytes: 954.6 KiB) (time elapsed: 17 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/9.
+INFO:absl:Deleting Checkpoint[step=8 | time=2025-05-22 12:17:53.657129+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=9] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 9, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916296.2374809, 'wait_for_prev_duration_secs': 0.00016427040100097656, 'checkpointer_blocking_start_time': 1747916296.237817, 'checkpointer_blocking_duration_secs': 0.02849888801574707, 'get_old_steps_start_time': 1747916296.26632, 'get_old_steps_duration_secs': 0.00018405914306640625, 'checkpoint_manager_blocking_start_time': 1747916296.237428, 'checkpoint_manager_blocking_duration_secs': 0.02933812141418457}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 9 - Policy Loss: -3.569748640060425, Value Loss: 1.957614779472351
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/9.orbax-checkpoint-tmp-18/default.orbax-checkpoint-tmp-19/array_metadatas/process_0
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 10.2 MiB/s (total bytes: 954.6 KiB) (time elapsed: 91 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/9.orbax-checkpoint-tmp-18/default.orbax-checkpoint-tmp-19 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/9.orbax-checkpoint-tmp-18/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/9.orbax-checkpoint-tmp-18 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/9
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/9`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.10 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/9
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 8.
+INFO:absl:[process=0][thread=save_finalize][step=9] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=9] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 10
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/10.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/10.orbax-checkpoint-tmp-20
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/10.orbax-checkpoint-tmp-20/default.orbax-checkpoint-tmp-21
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 47.2 MiB/s (total bytes: 954.6 KiB) (time elapsed: 19 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/10.
+INFO:absl:Deleting Checkpoint[step=9 | time=2025-05-22 12:18:16.266318+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=10] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/10.orbax-checkpoint-tmp-20/default.orbax-checkpoint-tmp-21/array_metadatas/process_0
+INFO:absl:{'step': 10, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916318.027664, 'wait_for_prev_duration_secs': 0.0001609325408935547, 'checkpointer_blocking_start_time': 1747916318.0279932, 'checkpointer_blocking_duration_secs': 0.031230926513671875, 'get_old_steps_start_time': 1747916318.059229, 'get_old_steps_duration_secs': 0.0001220703125, 'checkpoint_manager_blocking_start_time': 1747916318.027605, 'checkpoint_manager_blocking_duration_secs': 0.032411813735961914}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 10 - Policy Loss: -2.8304128646850586, Value Loss: 2.078146457672119
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 10.5 MiB/s (total bytes: 954.6 KiB) (time elapsed: 89 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/10.orbax-checkpoint-tmp-20/default.orbax-checkpoint-tmp-21 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/10.orbax-checkpoint-tmp-20/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/10.orbax-checkpoint-tmp-20 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/10
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/10`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.10 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/10
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 9.
+INFO:absl:[process=0][thread=save_finalize][step=10] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=10] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 11
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/11.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/11.orbax-checkpoint-tmp-22
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/11.orbax-checkpoint-tmp-22/default.orbax-checkpoint-tmp-23
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 57.9 MiB/s (total bytes: 954.6 KiB) (time elapsed: 16 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/11.
+INFO:absl:Deleting Checkpoint[step=10 | time=2025-05-22 12:18:38.059226+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/11.orbax-checkpoint-tmp-22/default.orbax-checkpoint-tmp-23/array_metadatas/process_0
+INFO:absl:[process=0][thread=MainThread][step=11] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 11, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916339.353227, 'wait_for_prev_duration_secs': 0.00017118453979492188, 'checkpointer_blocking_start_time': 1747916339.3535821, 'checkpointer_blocking_duration_secs': 0.029246807098388672, 'get_old_steps_start_time': 1747916339.382833, 'get_old_steps_duration_secs': 0.00015878677368164062, 'checkpoint_manager_blocking_start_time': 1747916339.353163, 'checkpoint_manager_blocking_duration_secs': 0.03057694435119629}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 11 - Policy Loss: -2.1181626319885254, Value Loss: 1.0268288850784302
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 9.9 MiB/s (total bytes: 954.6 KiB) (time elapsed: 94 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/11.orbax-checkpoint-tmp-22/default.orbax-checkpoint-tmp-23 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/11.orbax-checkpoint-tmp-22/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/11.orbax-checkpoint-tmp-22 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/11
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/11`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.11 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/11
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 10.
+INFO:absl:[process=0][thread=save_finalize][step=11] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=11] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 12
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/12.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/12.orbax-checkpoint-tmp-24
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/12.orbax-checkpoint-tmp-24/default.orbax-checkpoint-tmp-25
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 57.4 MiB/s (total bytes: 954.6 KiB) (time elapsed: 16 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/12.
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/12.orbax-checkpoint-tmp-24/default.orbax-checkpoint-tmp-25/array_metadatas/process_0
+INFO:absl:Deleting Checkpoint[step=11 | time=2025-05-22 12:18:59.382831+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=12] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 12, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916360.024697, 'wait_for_prev_duration_secs': 0.0001747608184814453, 'checkpointer_blocking_start_time': 1747916360.025045, 'checkpointer_blocking_duration_secs': 0.028382062911987305, 'get_old_steps_start_time': 1747916360.053431, 'get_old_steps_duration_secs': 0.00041794776916503906, 'checkpoint_manager_blocking_start_time': 1747916360.024641, 'checkpoint_manager_blocking_duration_secs': 0.029620885848999023}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 12 - Policy Loss: -1.652025818824768, Value Loss: 0.7366186380386353
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 9.7 MiB/s (total bytes: 954.6 KiB) (time elapsed: 95 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/12.orbax-checkpoint-tmp-24/default.orbax-checkpoint-tmp-25 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/12.orbax-checkpoint-tmp-24/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/12.orbax-checkpoint-tmp-24 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/12
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/12`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.11 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/12
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 11.
+INFO:absl:[process=0][thread=save_finalize][step=12] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=12] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 13
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/13.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/13.orbax-checkpoint-tmp-26
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/13.orbax-checkpoint-tmp-26/default.orbax-checkpoint-tmp-27
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 56.3 MiB/s (total bytes: 954.6 KiB) (time elapsed: 16 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/13.
+INFO:absl:Deleting Checkpoint[step=12 | time=2025-05-22 12:19:20.053428+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=13] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 13, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916381.231785, 'wait_for_prev_duration_secs': 0.00018095970153808594, 'checkpointer_blocking_start_time': 1747916381.232128, 'checkpointer_blocking_duration_secs': 0.030545949935913086, 'get_old_steps_start_time': 1747916381.262678, 'get_old_steps_duration_secs': 0.00014328956604003906, 'checkpoint_manager_blocking_start_time': 1747916381.231719, 'checkpoint_manager_blocking_duration_secs': 0.03147101402282715}
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/13.orbax-checkpoint-tmp-26/default.orbax-checkpoint-tmp-27/array_metadatas/process_0
+INFO:rl_blockchain.scripts.ppo_func:Epoch 13 - Policy Loss: -1.265138030052185, Value Loss: 0.21243023872375488
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 9.7 MiB/s (total bytes: 954.6 KiB) (time elapsed: 95 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/13.orbax-checkpoint-tmp-26/default.orbax-checkpoint-tmp-27 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/13.orbax-checkpoint-tmp-26/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/13.orbax-checkpoint-tmp-26 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/13
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/13`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.11 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/13
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 12.
+INFO:absl:[process=0][thread=save_finalize][step=13] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=13] CheckpointManager Save Finalize is done on all hosts.
+INFO:absl:[process=0][thread=MainThread][wait_until_finished] No Save Finalize thread to wait for. Returning.
+INFO:absl:[process=0] Saving checkpoint at step 14
+INFO:absl:[process=0] Started async saving checkpoint to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/14.
+INFO:absl:Transferring arrays to host memory with options: use_replica_parallel=True, enable_pinned_host_transfer=False
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/14.orbax-checkpoint-tmp-28
+INFO:absl:Creating tmp directory /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/14.orbax-checkpoint-tmp-28/default.orbax-checkpoint-tmp-29
+INFO:absl:[process=0] /jax/checkpoint/write/blocking_bytes_per_sec: 57.5 MiB/s (total bytes: 954.6 KiB) (time elapsed: 16 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] Background save thread started.
+INFO:absl:Finished blocking save in 0.03 seconds. Continuing to save asynchronously to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/14.
+INFO:absl:[process=0][thread=array_type_handler] Wrote 123 array_metadata.ArrayMetadata to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/14.orbax-checkpoint-tmp-28/default.orbax-checkpoint-tmp-29/array_metadatas/process_0
+INFO:absl:Deleting Checkpoint[step=13 | time=2025-05-22 12:19:41.262676+00:00]: (Reason: old checkpoint).
+INFO:absl:[process=0][thread=MainThread][step=14] Starting CheckpointManager Save Finalize thread=save_finalize
+INFO:absl:[process=0][thread=save_finalize] Waiting for background save thread=async_save.
+INFO:absl:{'step': 14, 'event_type': 'save', 'directory': '/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12', 'reached_preemption': False, 'preemption_received_at': None, 'synchronous': False, 'wait_for_prev_start_time': 1747916401.957004, 'wait_for_prev_duration_secs': 0.00021600723266601562, 'checkpointer_blocking_start_time': 1747916401.957393, 'checkpointer_blocking_duration_secs': 0.028931140899658203, 'get_old_steps_start_time': 1747916401.9863281, 'get_old_steps_duration_secs': 0.0002949237823486328, 'checkpoint_manager_blocking_start_time': 1747916401.956946, 'checkpoint_manager_blocking_duration_secs': 0.030001163482666016}
+INFO:rl_blockchain.scripts.ppo_func:Epoch 14 - Policy Loss: -1.0473839044570923, Value Loss: 0.056913889944553375
+INFO:absl:[process=0] /jax/checkpoint/write/bytes_per_sec: 10.4 MiB/s (total bytes: 954.6 KiB) (time elapsed: 90 milliseconds) (per-host)
+INFO:absl:[process=0][thread=async_save] 3 Handler Commit operations completed.
+INFO:absl:[process=0][thread=async_save] Skipped cross-host ArrayMetadata validation because only one process is found: process_index=0.
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/14.orbax-checkpoint-tmp-28/default.orbax-checkpoint-tmp-29 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/14.orbax-checkpoint-tmp-28/default
+INFO:absl:Renaming /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/14.orbax-checkpoint-tmp-28 to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/14
+INFO:absl:[process=0][thread=async_save] Finished saving checkpoint (finalized tmp dir) to `/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/14`.
+INFO:absl:Finished asynchronous save (blocking + background) in 0.10 seconds to /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints/run_12/14
+INFO:absl:[process=0][thread=async_save] Background save thread done.
+INFO:absl:[process=0][thread=save_finalize] Done with waiting for background save thread=async_save.
+INFO:absl:[process=0][thread=save_finalize] No errors found in background save thread=async_save.
+INFO:absl:Deleted step 13.
+INFO:absl:[process=0][thread=save_finalize][step=14] CheckpointManager Save Finalize is syncing with other hosts...
+INFO:absl:[process=0][thread=save_finalize][step=14] CheckpointManager Save Finalize is done on all hosts.
+Traceback (most recent call last):
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/./rl_blockchain/scripts/run.py", line 31, in <module>
+    main()
+    ~~~~^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/./rl_blockchain/scripts/run.py", line 21, in main
+    train_ppo(args)
+    ~~~~~~~~~^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/rl_blockchain/scripts/ppo_func.py", line 108, in train_ppo
+    ppo_state, policy_loss, value_loss = train_epoch(
+                                         ~~~~~~~~~~~^
+        ppo_state=ppo_state,
+        ^^^^^^^^^^^^^^^^^^^^
+    ...<13 lines>...
+        gat2_nodes_out=gat2_nodes_out,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/rl_blockchain/algo/ppo.py", line 516, in train_epoch
+    ppo_state, policy_loss, value_loss = update_ppo(
+                                         ~~~~~~~~~~^
+        ppo_state,
+        ^^^^^^^^^^
+    ...<9 lines>...
+        clip_ratio
+        ^^^^^^^^^^
+    )
+    ^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/traceback_util.py", line 182, in reraise_with_filtered_traceback
+    return fun(*args, **kwargs)
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/pjit.py", line 340, in cache_miss
+    pgle_profiler) = _python_pjit_helper(fun, jit_info, *args, **kwargs)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/pjit.py", line 191, in _python_pjit_helper
+    out_flat, compiled, profiler = _pjit_call_impl_python(*args_flat, **p.params)
+                                   ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/pjit.py", line 1809, in _pjit_call_impl_python
+    ).compile()
+      ~~~~~~~^^
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/interpreters/pxla.py", line 2462, in compile
+    executable = UnloadedMeshExecutable.from_hlo(
+        self._name, self._hlo, **self.compile_args,
+        compiler_options_kvs=compiler_options_kvs)
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/interpreters/pxla.py", line 3004, in from_hlo
+    xla_executable = _cached_compilation(
+        hlo, name, mesh, spmd_lowering,
+        tuple_args, auto_spmd_lowering, allow_prop_to_inputs,
+        allow_prop_to_outputs, tuple(host_callbacks), backend, da, pmap_nreps,
+        compiler_options_kvs, pgle_profiler)
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/interpreters/pxla.py", line 2795, in _cached_compilation
+    xla_executable = compiler.compile_or_get_cached(
+        backend, computation, dev, compile_options, host_callbacks,
+        pgle_profiler)
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/compiler.py", line 432, in compile_or_get_cached
+    return _compile_and_write_cache(
+        backend,
+    ...<4 lines>...
+        cache_key,
+    )
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/compiler.py", line 694, in _compile_and_write_cache
+    executable = backend_compile(
+        backend, computation, compile_options, host_callbacks
+    )
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/profiler.py", line 334, in wrapper
+    return func(*args, **kwargs)
+  File "/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/.venv/lib/python3.13/site-packages/jax/_src/compiler.py", line 324, in backend_compile
+    return backend.compile(built_c, compile_options=options)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+KeyboardInterrupt

@@ -1,0 +1,15 @@
+{"time":"2025-05-22T13:57:31.006633+02:00","level":"INFO","msg":"stream: starting","core version":"0.19.11","symlink path":"/Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/wandb/run-20250522_135730-run_9/logs/debug-core.log"}
+{"time":"2025-05-22T13:57:31.367095+02:00","level":"INFO","msg":"created new stream","id":"run_9"}
+{"time":"2025-05-22T13:57:31.367148+02:00","level":"INFO","msg":"stream: started","id":"run_9"}
+{"time":"2025-05-22T13:57:31.367156+02:00","level":"INFO","msg":"writer: Do: started","stream_id":"run_9"}
+{"time":"2025-05-22T13:57:31.367161+02:00","level":"INFO","msg":"sender: started","stream_id":"run_9"}
+{"time":"2025-05-22T13:57:31.367189+02:00","level":"INFO","msg":"handler: started","stream_id":"run_9"}
+{"time":"2025-05-22T13:57:31.678896+02:00","level":"INFO","msg":"Starting system monitor"}
+{"time":"2025-05-22T13:58:03.033359+02:00","level":"INFO","msg":"stream: closing","id":"run_9"}
+{"time":"2025-05-22T13:58:03.033424+02:00","level":"INFO","msg":"Stopping system monitor"}
+{"time":"2025-05-22T13:58:03.033714+02:00","level":"INFO","msg":"Stopped system monitor"}
+{"time":"2025-05-22T13:58:03.725768+02:00","level":"INFO","msg":"fileTransfer: Close: file transfer manager closed"}
+{"time":"2025-05-22T13:58:04.093568+02:00","level":"INFO","msg":"handler: closed","stream_id":"run_9"}
+{"time":"2025-05-22T13:58:04.093678+02:00","level":"INFO","msg":"writer: Close: closed","stream_id":"run_9"}
+{"time":"2025-05-22T13:58:04.093718+02:00","level":"INFO","msg":"sender: closed","stream_id":"run_9"}
+{"time":"2025-05-22T13:58:04.09435+02:00","level":"INFO","msg":"stream: closed","id":"run_9"}

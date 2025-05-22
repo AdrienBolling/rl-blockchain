@@ -1,0 +1,89 @@
+_wandb:
+    value:
+        cli_version: 0.19.11
+        m: []
+        python_version: 3.13.1
+        t:
+            "1":
+                - 12
+                - 45
+                - 55
+            "2":
+                - 12
+                - 45
+                - 55
+            "3":
+                - 13
+                - 14
+                - 15
+                - 16
+                - 23
+                - 55
+            "4": 3.13.1
+            "5": 0.19.11
+            "8":
+                - 5
+            "12": 0.19.11
+            "13": darwin-arm64
+algo:
+    value: ppo
+batch_size:
+    value: 64
+checkpoint:
+    value: null
+checkpoint_dir:
+    value: /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/checkpoints
+clip_ratio:
+    value: 0.2
+env:
+    value: BlockchainEnv_intermediary
+gamma:
+    value: 0.99
+gat_arch:
+    value:
+        - 64
+        - 64
+        - 64
+lambda_:
+    value: 0.95
+learning_rate:
+    value: 0.0003
+log_dir:
+    value: /Users/adrien.bolling/Library/CloudStorage/OneDrive-UniversityofLuxembourg/VSCode/rl-blockchain/logs
+logging_datefmt:
+    value: '%Y-%m-%d %H:%M:%S'
+logging_filemode:
+    value: a
+logging_filename:
+    value: null
+logging_format:
+    value: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logging_level:
+    value: INFO
+logging_stream:
+    value: false
+mode:
+    value: train
+n_nodes:
+    value: 20
+num_envs:
+    value: 1
+num_epochs:
+    value: 100
+num_steps:
+    value: 1000
+reward_weights:
+    value:
+        - 0.5
+        - 0.5
+seed:
+    value: 0
+voting_nodes:
+    value: 5
+wandb_entity:
+    value: bolling-adrien
+wandb_project:
+    value: rl_blockchain
+wandb_tags:
+    value:
+        - default

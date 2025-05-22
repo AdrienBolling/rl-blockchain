@@ -1,0 +1,6 @@
+# UV VENV
+.venv
+
+# BUILD FILES
+*.egg-info
+*.egg
