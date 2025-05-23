@@ -1,6 +1,5 @@
 from argparse import ArgumentParser
 import os
-from pathlib import Path
 
 
 def _parse_args():

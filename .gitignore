@@ -4,3 +4,16 @@
 # BUILD FILES
 *.egg-info
 *.egg
+
+# Results
+wandb
+profiling_results
+
+# test files
+test.py
+tests.ipynb
+
+
+# Cache files
+__pycache__
+*.pyc
