@@ -49,7 +49,7 @@ class BlockchainEnv_intermediary:
                                                                     node_distance_matrix.shape[0], key=self.key)
 
     @partial(jax.jit, static_argnums=[0])
-    def get_first_state(self) -> State:
+    def _get_first_state(self) -> State:
         """
         Get the initial state of the blockchain.
 
@@ -72,7 +72,7 @@ class BlockchainEnv_intermediary:
         Reset the environment.
         :return: The initial state of the environment.
         """
-        return self.get_first_state()
+        return self._get_first_state()
 
     @partial(jax.jit, static_argnums=[0])
     def _inner_step(self, state: State, action: int) -> State:

@@ -130,7 +130,7 @@ def env_profiling(args):
         # Stop profiling
         end = time.time()
         profiler.disable()
-        profiler.dump_stats(os.path.join(args.results_dir, "multi_env_profiling.prof"))
+        profiler.dump_stats(os.path.join(args.results_dir, "multi_env_profiling.prof"))=
         print(f"Time taken for {args.n_steps} steps: {end - start:.4f} seconds ({args.n_envs} envs)")
 
                 
