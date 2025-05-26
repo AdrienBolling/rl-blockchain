@@ -12,8 +12,9 @@
         "matplotlib>=3.10.3",
         "networkx>=3.4.2",
         "optax>=0.2.4",
+        "tqdm>=4.67.1",
         "wandb>=0.19.11",
-    ]
+]
 
     [dependency-groups]
     dev = [

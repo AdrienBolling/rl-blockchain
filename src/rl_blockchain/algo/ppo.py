@@ -11,6 +11,9 @@ import jraph as jr
 import distrax
 import flax.linen as nn
 import orbax.checkpoint as ocp
+from tqdm import tqdm
+
+from rl_blockchain.rl.wrappers.NormalizationWrapper import NormalizationWrapper
 
 
 @struct.dataclass
@@ -437,6 +440,52 @@ def eval_ppo_and_log(env_fn, env_params, ppo_state, reward_weights, num_episodes
         returns.append(tot)
     avg = sum(returns) / len(returns)
     print(f"Eval over {num_episodes} eps: avg return={avg:.3f}")
+    
+def eval_ppo(
+    ppo_state: PPOState,
+    env_fn: Callable[..., Any],
+    env_params: Dict[str, Any],
+    reward_weights: jnp.ndarray,
+    num_episodes: int = 10,
+    key: Optional[jnp.ndarray] = None,
+    gat_1_out: int = 64,
+    gat_2_out: int = 64,
+    gat_2_nodes_out: int = 64,
+):
+    env = env_fn(**env_params)
+    metrics = {
+        "returns": [],
+        "lengths": [],
+        "rewards": [],
+        "infos": [],
+    }
+    key, subkey = jax.random.split(key)
+    pol_net = PolicyNET_GAT(gat_1_out, gat_2_out, gat_2_nodes_out, env.sample_legal_action(env.reset(), key=subkey).shape[0])
+    for _ in tqdm(range(num_episodes)):
+        st = env.reset()
+        done = False
+        total_reward = 0.0
+        rewards = []
+        lengths = 0
+        infos_ = []
+
+        while not done:
+            graph = st.blockchain
+            key, subkey = jax.random.split(key)
+            dist = pol_net.apply(ppo_state.policy_params, graph)
+            action = dist.mode()
+            st, reward, done, infos = env.step(st, action, reward_weights)
+            total_reward += reward
+            rewards.append(reward)
+            lengths += 1
+            infos_.append(infos)
+            
+        metrics["returns"].append(total_reward)
+        metrics["lengths"].append(lengths)
+        metrics["rewards"].append(rewards)
+        metrics["infos"].append(infos_)
+        
+    return metrics
 
 def train_epoch(
     ppo_state: PPOState,
@@ -453,13 +502,18 @@ def train_epoch(
     reward_weights: jnp.ndarray,
     gat1_out: int,
     gat2_out: int,
-    gat2_nodes_out: int
+    gat2_nodes_out: int,
+    normalize_rewards: bool = True,
 ) -> Tuple[PPOState, float, float]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
     """
     env = env_fn(**env_params)
+    
+    if normalize_rewards:
+        # If using normalization, ensure the environment is wrapped accordingly
+        env = NormalizationWrapper(env)
 
     # Split RNG for rollouts
     key, *subkeys = jax.random.split(ppo_state.rng_key, num_envs + 1)

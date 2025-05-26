@@ -1,12 +1,15 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 import wandb
 import re
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch
+from rl_blockchain.algo.ppo import eval_ppo as ev_ppo
 import os
 import logging
 import orbax.checkpoint as ocp
 from rl_blockchain.rl.env import BlockchainEnv_intermediary
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,27 @@ def make_env_params(key, n_nodes, voting_nodes):
         "random_key": key,
     }
     return env_params
+
+def log_to_wandb(logs: dict, mode: str = "train"):
+    # Wandb is already initialized in the main script, so we just need to log the arguments
+    if "mode" == "train+eval":
+        aggregated_eval_metrics = {}
+        avg_return = np.asarray(logs["eval"]["return"]).mean()
+        avg_length = np.asarray(logs["eval"]["length"]).mean()
+        individual_rewards = np.asarray(logs["eval"]["infos"]["rewards"]).mean(axis=0)
+        aggregated_eval_metrics["avg_return"] = avg_return
+        aggregated_eval_metrics["avg_length"] = avg_length
+        for i, rew in enumerate(logs["eval"]["infos"]["rewards"]):
+            aggregated_eval_metrics[f"reward_{i}"] = individual_rewards[i]
+        
+        
+    elif mode == "train":
+        # If we are in training mode, we log the training metrics
+        aggregated_eval_metrics = {
+        }
+        
+    logs["eval"] = aggregated_eval_metrics
+    wandb.log(logs, step=logs["train"]["epoch"])
 
 def train_ppo(ARGS):
     """
@@ -103,7 +127,7 @@ def train_ppo(ARGS):
     )
     
     # Train the PPO agent
-    for epoch in range(num_epochs):
+    for epoch in tqdm(range(num_epochs)):
         # Train for one epoch
         ppo_state, policy_loss, value_loss = train_epoch(
             ppo_state=ppo_state,
@@ -122,13 +146,45 @@ def train_ppo(ARGS):
             gat2_out=gat2_out,
             gat2_nodes_out=gat2_nodes_out,
         )
+        key, subkey = jax.random.split(key)
+        if epoch % ARGS.eval_interval == 0:
+            # Evaluate the PPO agent
+            metrics = ev_ppo(
+                ppo_state=ppo_state,
+                env_fn=env_fn,
+                env_params=env_params,
+                reward_weights=reward_weights,
+                num_episodes=ARGS.eval_episodes,
+                key=subkey,
+                gat_1_out=gat1_out,
+                gat_2_out=gat2_out,
+                gat_2_nodes_out=gat2_nodes_out,
+            )
+            
+            logs = {
+                "train": {
+                    "epoch": epoch,
+                    "policy_loss": policy_loss,
+                    "value_loss": value_loss,
+                },
+                "eval": metrics,
+            }
+            
+            log_to_wandb(logs, mode="train+eval")
+        else:
+            logs = {
+                "train": {
+                    "epoch": epoch,
+                    "policy_loss": policy_loss,
+                    "value_loss": value_loss,
+                }
+            }
+            log_to_wandb(logs, mode="train")
+            
         
         # Save the checkpoint
         checkpoint_manager.save(step=epoch, args=ocp.args.StandardSave(ppo_state))
         logger.info(f"Epoch {epoch} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
-        
-        
-        
         
         
 def eval_ppo():

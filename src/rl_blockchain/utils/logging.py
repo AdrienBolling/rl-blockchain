@@ -95,7 +95,7 @@ def setup_wandb(ARGS):
         wandb.init(
             project=ARGS.wandb_project,
             entity=ARGS.wandb_entity,
-            name=f"run_{new_run_id}",
+            name=f"{new_run_id}",
             id=new_run_id,
             config=ARGS,
             job_type=ARGS.mode,

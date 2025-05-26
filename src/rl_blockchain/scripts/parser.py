@@ -185,6 +185,20 @@ def _parse_args():
         default=False,
         help="If True, warm start the training from the checkpoint. Default is False.",
     )
+    
+    # Eval of the PPO agent training
+    train_parser.add_argument(
+        "--eval-interval",
+        type=int,
+        default=10,
+        help="Interval (in epochs) to evaluate the agent during training. Default is 10.",
+    )
+    train_parser.add_argument(
+        "--eval-episodes",
+        type=int,
+        default=5,
+        help="Number of episodes to run for evaluation. Default is 10.",
+    )
 
 
 
