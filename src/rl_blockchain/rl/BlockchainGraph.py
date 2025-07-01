@@ -1,10 +1,11 @@
-import jraph
-import jax.numpy as jnp
-import jax
-from jax import jit
 from functools import partial
-import networkx as nx
+
+import jax
+import jax.numpy as jnp
+import jraph
 import matplotlib.pyplot as plt
+import networkx as nx
+from jax import jit
 
 node_features_dict = {
     "node_id": 0,
@@ -38,7 +39,7 @@ def compute_random_mean_distance_from_matrix(node_distance_matrix: jnp.ndarray, 
         The mean distance.
     """
     # Choose num_nodes random nodes
-    random_nodes = jax.random.choice(key, num_nodes, shape=(num_nodes,), replace=False)
+    random_nodes = jax.random.choice(key, node_distance_matrix.shape[0], shape=(num_nodes,), replace=False)
     # Compute the mean distance between the random nodes
     d = node_distance_matrix[random_nodes, :][:, random_nodes]
     # Return the mean distance excluding the diagonal
@@ -83,12 +84,20 @@ def create_blockchain_graph(
     # Create edges
     senders, receivers = create_pairwise_arrays(node_distance_matrix.shape[0])
 
+    # Remove self-loops
+    mask = senders != receivers
+    senders = senders[mask]
+    receivers = receivers[mask]
+
     # Create edges features
     edge_features = jnp.expand_dims(node_distance_matrix.flatten(), axis=1)
+    edge_features = edge_features[mask]  # Remove self-loops from edge features
+
+    # maybe remove here
 
     # Save informations
     n_nodes = node_distance_matrix.shape[0]
-    n_edges = n_nodes ** 2
+    n_edges = n_nodes * (n_nodes - 1)
 
     # Global features
     global_features = jnp.zeros((1, 1))
@@ -108,7 +117,7 @@ def create_blockchain_graph(
 
 
 @jax.jit
-def voting_update(blockchain, voting_node_index):
+def voting_update(blockchain_network: jraph.GraphsTuple, voting_node_index) -> jraph.GraphsTuple:
     """
     Update the blockchain with a voting node.
 
@@ -122,13 +131,14 @@ def voting_update(blockchain, voting_node_index):
     # Update the blockchain, at the index of the voting node, the chosen feature is set to 1
 
     # Get the nodes
-    nodes = blockchain.nodes
+    nodes = blockchain_network.nodes
     # Update the chosen feature of the voting node
+    # TODO : Check if the voting_node_index is valid
     nodes = nodes.at[voting_node_index, node_features_dict["chosen"]].set(1)
     # Update the nodes
-    blockchain = blockchain._replace(nodes=nodes)
+    blockchain_network = blockchain_network._replace(nodes=nodes)
 
-    return blockchain
+    return blockchain_network
 
 
 @partial(jax.jit, static_argnums=(1,))
@@ -169,8 +179,8 @@ def partial_reset(blockchain):
 
     blockchain = blockchain._replace(
         nodes=blockchain.nodes.at[
-            :, node_features_dict["distrib_chosen"]
-        ].set(new_distrib_chosen)
+              :, node_features_dict["distrib_chosen"]
+              ].set(new_distrib_chosen)
     )
 
     return blockchain

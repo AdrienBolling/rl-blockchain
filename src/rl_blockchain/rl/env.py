@@ -46,7 +46,7 @@ class BlockchainEnv_intermediary:
 
         # Compute the approximate shortest mean distance for the environment
         self.shortest_mean_distance = approximate_min_mean_distance(node_distance_matrix, voting_nodes,
-                                                                    node_distance_matrix.shape[0], key=self.key)
+                                                                    10000, key=self.key)
 
     @partial(jax.jit, static_argnums=[0])
     def _get_first_state(self) -> State:

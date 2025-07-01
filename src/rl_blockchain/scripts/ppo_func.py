@@ -13,10 +13,11 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
+
 def make_env_params(key, n_nodes, voting_nodes):
     # Create a random symmetric distance matrix
     A = jax.random.uniform(key, (n_nodes, n_nodes))
-    dist = (A + A.T) * 0.5
+    dist = jnp.fill_diagonal((A + A.T) * 0.5, 0, inplace=False)
     # Create environment parameters
     env_params = {
         "node_distance_matrix": dist,
@@ -24,6 +25,7 @@ def make_env_params(key, n_nodes, voting_nodes):
         "random_key": key,
     }
     return env_params
+
 
 def log_to_wandb(logs: dict, mode: str = "train"):
     # Wandb is already initialized in the main script, so we just need to log the arguments
@@ -36,15 +38,16 @@ def log_to_wandb(logs: dict, mode: str = "train"):
         aggregated_eval_metrics["avg_length"] = avg_length
         for i, rew in enumerate(logs["eval"]["infos"]["rewards"]):
             aggregated_eval_metrics[f"reward_{i}"] = individual_rewards[i]
-        
-        
+
+
     elif mode == "train":
         # If we are in training mode, we log the training metrics
         aggregated_eval_metrics = {
         }
-        
+
     logs["eval"] = aggregated_eval_metrics
     wandb.log(logs, step=logs["train"]["epoch"])
+
 
 def train_ppo(ARGS):
     """
@@ -74,10 +77,10 @@ def train_ppo(ARGS):
         n_nodes=ARGS.n_nodes,
         voting_nodes=ARGS.voting_nodes
     )
-    
+
     # If we need to resume a training, get the name of the checkpoint
     chkpt_name = ARGS.checkpoint
-    
+
     # If the checkpoint is 'latest', get the latest run id
     api = wandb.Api()
     runs = api.runs(
@@ -96,22 +99,22 @@ def train_ppo(ARGS):
     except ValueError:
         # When the project does not exist yet, assume no runs
         chkpt_name = "run_0"
-    
+
     # Checkpoint_dir
     chkpt_dir = f"{ARGS.checkpoint_dir}/{ARGS.wandb_entity}_{ARGS.wandb_project}/{chkpt_name}"
-        
+
     # Create the checkpointmanager
     checkpoint_manager = create_checkpoint_manager(
         checkpoint_dir=chkpt_dir,
         max_to_keep=1,
         save_interval_steps=1,
     )
-    
+
     # Create the environment
     env_fn = BlockchainEnv_intermediary
-    
+
     gat1_out, gat2_out, gat2_nodes_out = ARGS.gat_arch
-    
+
     # Create the PPO state
     ppo_state = create_ppo_state(
         checkpoint_manager=checkpoint_manager,
@@ -125,7 +128,7 @@ def train_ppo(ARGS):
         gat2_out=gat2_out,
         gat2_nodes_out=gat2_nodes_out,
     )
-    
+
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
         # Train for one epoch
@@ -160,7 +163,7 @@ def train_ppo(ARGS):
                 gat_2_out=gat2_out,
                 gat_2_nodes_out=gat2_nodes_out,
             )
-            
+
             logs = {
                 "train": {
                     "epoch": epoch,
@@ -169,7 +172,7 @@ def train_ppo(ARGS):
                 },
                 "eval": metrics,
             }
-            
+
             log_to_wandb(logs, mode="train+eval")
         else:
             logs = {
@@ -180,12 +183,11 @@ def train_ppo(ARGS):
                 }
             }
             log_to_wandb(logs, mode="train")
-            
-        
+
         # Save the checkpoint
         checkpoint_manager.save(step=epoch, args=ocp.args.StandardSave(ppo_state))
         logger.info(f"Epoch {epoch} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
-        
-        
+
+
 def eval_ppo():
     pass
