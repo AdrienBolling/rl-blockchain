@@ -23,6 +23,19 @@ def selected_node_to_action(selected_node: int) -> int:
     return selected_node - 1
 
 
+@partial(jax.jit, static_argnames=('nb_nodes',))
+def _generate_random_chosen_nodes(nb_nodes: int, nb_val: jax.Array, key: jax.Array) -> jax.Array:
+    key1, key2 = jax.random.split(key)
+    init = jax.random.bernoulli(key1, p=0.5, shape=(nb_nodes,))
+    not_selected = jax.random.permutation(key2, nb_nodes) < nb_val
+    only_false = jnp.zeros(nb_nodes, dtype=bool)
+    return jax.lax.select(
+        not_selected,
+        init,
+        only_false
+    )
+
+
 class JraphSpace(spaces.Space):
     """A space for jraph.GraphsTuple."""
     """
@@ -33,19 +46,27 @@ class JraphSpace(spaces.Space):
     def __init__(self, features: spaces.Box, nb_nodes: int, max_edge_weights: float):
         super().__init__()
         self.features = spaces.Box(features.low, features.high, (nb_nodes,) + features.shape, features.dtype)
+        self.boolean_features = spaces.Box(0, 1, (nb_nodes,), jnp.bool)
+        self.validator_features = spaces.Discrete(nb_nodes)
         self.nb_nodes = nb_nodes
         self._max_edge_weights = max_edge_weights
 
     def sample(self, key: jax.Array) -> jraph.GraphsTuple:
         """Sample a random graph from the space."""
-        feature_key, edges_key = jax.random.split(key)
+        feature_key, validator_key, chosen_node_key, edges_key = jax.random.split(key, 4)
         sample_features = self.features.sample(feature_key)
         adj_matrix = create_rd_adj_matrix(self.nb_nodes, edges_key) * self._max_edge_weights
         graph: jraph.GraphsTuple = create_jraph_from_adj_matrix_fast(adj_matrix, STATIC_MASKS_DICT[self.nb_nodes])
+        sample_nb_val = self.validator_features.sample(validator_key)
+
+        bool_vector = _generate_random_chosen_nodes(self.nb_nodes, sample_nb_val, chosen_node_key)
+        vector_chosen = bool_vector[:, None].astype(self.features.dtype)
+        features_with_chosen = jnp.concat([vector_chosen, sample_features], axis=1)
 
         # Add the features to the graph
         graph_with_features = graph._replace(
-            nodes=sample_features
+            nodes=features_with_chosen,
+            globals=sample_nb_val,
         )
         return graph_with_features
 
@@ -61,7 +82,11 @@ class JraphSpace(spaces.Space):
             return False
         if graph.edges.max().item() > self._max_edge_weights or graph.edges.min().item() < 0:
             return False
-        if self.features.contains(graph.nodes) is False:
+        chosen_nodes = graph.nodes[:, 0].astype(jnp.bool)
+        features = graph.nodes[:, 1:]
+        if not self.features.contains(features):
+            return False
+        if sum(chosen_nodes) > graph.globals.item():
             return False
         return True
 
@@ -112,7 +137,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         node_feature = spaces.Box(
             low=jnp.array([-self._static_params.box_clip, 0]),
             high=jnp.array([self._static_params.box_clip, 1]),
-            shape=(2,),
+            shape=(1,),
             dtype=jnp.float32
         )
 
@@ -151,11 +176,6 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
 
     def step_env(self, key: jax.Array, state: EnvState, action: int | float | jax.Array, params: EnvParams) -> tuple[
         GraphsTuple, TEnvState, jax.Array, jax.Array, dict[Any, Any]]:
-        mask = compute_legal_actions(state, params)
-        is_illegal_action = jnp.logical_not(mask[action])
-
-        done = jnp.logical_or(self.is_terminal(state, params), is_illegal_action)
-
         selected_node = action_to_selected_node(action)
 
         is_inner = jnp.array(selected_node != -1)
@@ -168,6 +188,9 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
                                  )
 
         new_obs = self.get_obs(new_state, params)
+        mask = compute_legal_actions(new_obs)
+        is_illegal_action = jnp.logical_not(mask[action])
+        done = jnp.logical_or(self.is_terminal(state, params), is_illegal_action)
 
         operand_reward = (new_state, params, self._static_params)
         reward = jax.lax.cond(
@@ -219,10 +242,14 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
 
 
 @jax.jit
-def compute_legal_actions(state: EnvState, params: EnvParams) -> jnp.ndarray:
-    current_nb_val = jnp.sum(state.chosen_nodes)
-    available = jnp.logical_not(state.chosen_nodes)
-    nb_nodes = state.chosen_nodes.shape[0]
+def compute_legal_actions(obs: GraphsTuple) -> jnp.ndarray:
+    # TODO must be applied on an observation, not on the state
+    chosen_nodes = obs.nodes[:, 0]
+    nb_validators = obs.globals
+
+    current_nb_val = jnp.sum(chosen_nodes)
+    available = jnp.logical_not(chosen_nodes)
+    nb_nodes = chosen_nodes.shape[0]
 
     not_enough_validators = jnp.zeros((nb_nodes + 1,), dtype=bool)
     too_much_validators = jnp.zeros((nb_nodes + 1,), dtype=bool)
@@ -233,7 +260,7 @@ def compute_legal_actions(state: EnvState, params: EnvParams) -> jnp.ndarray:
     too_much_validators = too_much_validators.at[0].set(True)
 
     return jax.lax.select(
-        current_nb_val < params.nb_validators,
+        current_nb_val < nb_validators,
         not_enough_validators,
         too_much_validators
     )
