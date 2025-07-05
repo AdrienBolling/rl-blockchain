@@ -81,7 +81,6 @@ class StaticEnvParams:
     nb_nodes: int
     distance_opt_array: jax.Array  # Dictionary of optimal distance bounds for each number of validators
     avg_distance: float  # Average distance for the environment, can be the last avg distance
-    network_max_length: float = 1  # Maximum length of the network graph
     box_clip = _box_clip  # Clip value for node features
 
     horizon: int = 200
@@ -90,7 +89,7 @@ class StaticEnvParams:
     rewards = ["gini", "distance"]
 
     @classmethod
-    def create(cls, nb_nodes: int, filename: str, network_max_length: float = 1.,
+    def create(cls, nb_nodes: int, filename: str,
                horizon: int = 200) -> 'StaticEnvParams':
         min_max_array = load_min_max_array(filename)
         avg_distance = min_max_array[nb_nodes][0]
@@ -99,7 +98,6 @@ class StaticEnvParams:
             nb_nodes=nb_nodes,
             distance_opt_array=min_max_array,
             avg_distance=avg_distance.item(),
-            network_max_length=network_max_length,
             horizon=horizon
         )
 
@@ -108,7 +106,6 @@ class StaticEnvParams:
 class EnvParams(environment.EnvParams):
     network_graph: jraph.GraphsTuple = None  # Parameters
     adj_matrix: jnp.ndarray = None  # same graph, but in a different struct
-    # network_max_length: float = 50  # Maximum length of the network graph
     nb_validators: int = 0
     # nb_nodes: int = 0
     # box_clip = _box_clip  # Clip value for node features
@@ -130,8 +127,7 @@ class EnvParams(environment.EnvParams):
 
     @classmethod
     def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int, filename: str,
-               rewards_weights: list = None,
-               network_max_length: float = 1.) -> 'EnvParams':
+               rewards_weights: list = None) -> 'EnvParams':
         # nb_nodes = network_graph.shape[0]
         # min_max_array = load_min_max_array(filename)
         # avg_distance = min_max_array[nb_nodes][0]
@@ -142,7 +138,6 @@ class EnvParams(environment.EnvParams):
         return cls(
             network_graph=create_jraph_from_adj_matrix(adj_network_graph),
             adj_matrix=adj_network_graph,
-            # network_max_length=network_max_length,
             nb_validators=nb_validators,
             # nb_nodes=nb_nodes,
             rewards_weights=rewards_weights_jnp / rewards_weights_jnp.sum(),

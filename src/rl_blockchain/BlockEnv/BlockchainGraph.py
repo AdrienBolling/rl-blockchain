@@ -7,6 +7,33 @@ import jraph
 import numpy as np
 
 
+@jax.jit
+def gcn_normalize_adjacency(mat_to_norm: jnp.ndarray) -> jnp.ndarray:
+    """
+    Applies the symmetric normalization from Kipf & Welling (GCN):
+      A_hat = D^{-1/2} * (A + I) * D^{-1/2}
+    on a weighted adjacency matrix A.
+
+    Args:
+        mat_to_norm: [N, N] adjacency matrix, possibly weighted.
+
+    Returns:
+        [N, N] normalized adjacency matrix
+    """
+    N = mat_to_norm.shape[0]
+    # Add self-loops
+    A_tilde = mat_to_norm + jnp.eye(N)
+    # Compute degree of each node
+    D_tilde = jnp.sum(A_tilde, axis=1)  # [N]
+    # Compute inverse square root of degrees
+    D_tilde_inv_sqrt = 1.0 / jnp.sqrt(D_tilde)
+    # Build diagonal degree matrix
+    D_inv_sqrt_mat = jnp.diag(D_tilde_inv_sqrt)
+    # Apply normalization
+    A_hat = D_inv_sqrt_mat @ A_tilde @ D_inv_sqrt_mat
+    return A_hat
+
+
 @partial(jax.jit, static_argnames=['n'])
 def _create_pairwise_arrays(n):
     indices = jnp.arange(n)
@@ -19,7 +46,8 @@ def _create_pairwise_arrays(n):
 @partial(jax.jit, static_argnames=['n_nodes'])
 def create_rd_adj_matrix(n_nodes: int, key):
     A = jax.random.uniform(key, (n_nodes, n_nodes))
-    return jnp.fill_diagonal((A + A.T) * 0.5, 0, inplace=False)
+    mat = jnp.fill_diagonal((A + A.T) * 0.5, 0, inplace=False)
+    return gcn_normalize_adjacency(mat)
 
 
 def compute_adjacency_matrix(dict_node: dict) -> np.ndarray:
@@ -44,7 +72,9 @@ def import_adj_matrix_from_file(file_path: str) -> jnp.ndarray:
         position_map = json.load(f)
         position_map = {int(k): v for k, v in position_map.items()}
         matrix = compute_adjacency_matrix(position_map)
-    return jnp.array(matrix, dtype=jnp.float32)
+    # Convert the matrix to a JAX array with float32 type
+    mat = jnp.array(matrix, dtype=jnp.float32)
+    return gcn_normalize_adjacency(mat)
 
 
 @jax.jit

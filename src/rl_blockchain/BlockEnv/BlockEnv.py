@@ -42,19 +42,18 @@ class JraphSpace(spaces.Space):
     The observation is a graph with a dictionary of features
     """
 
-    def __init__(self, features: spaces.Box, nb_nodes: int, max_edge_weights: float):
+    def __init__(self, features: spaces.Box, nb_nodes: int):
         super().__init__()
         self.features = spaces.Box(features.low, features.high, (nb_nodes,) + features.shape, features.dtype)
         self.boolean_features = spaces.Box(0, 1, (nb_nodes,), jnp.bool)
         self.validator_features = spaces.Discrete(nb_nodes)
         self.nb_nodes = nb_nodes
-        self._max_edge_weights = max_edge_weights
 
     def sample(self, key: jax.Array) -> jraph.GraphsTuple:
         """Sample a random graph from the space."""
         feature_key, validator_key, chosen_node_key, edges_key = jax.random.split(key, 4)
         sample_features = self.features.sample(feature_key)
-        adj_matrix = create_rd_adj_matrix(self.nb_nodes, edges_key) * self._max_edge_weights
+        adj_matrix = create_rd_adj_matrix(self.nb_nodes, edges_key)
         graph: jraph.GraphsTuple = create_jraph_from_adj_matrix_fast(adj_matrix, STATIC_MASKS_DICT[self.nb_nodes])
         sample_nb_val = self.validator_features.sample(validator_key)
 
@@ -79,7 +78,7 @@ class JraphSpace(spaces.Space):
             return False
         if graph.edges.shape[0] != self.nb_nodes * (self.nb_nodes - 1):
             return False
-        if graph.edges.max().item() > self._max_edge_weights or graph.edges.min().item() < 0:
+        if graph.edges.max().item() > 1 or graph.edges.min().item() < 0:
             return False
         chosen_nodes = graph.nodes[:, 0].astype(jnp.bool)
         features = graph.nodes[:, 1:]
@@ -110,7 +109,6 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         #     weight_reward = [1, 1]
         # self.first_reward = weight_reward
         # self.first_network_adj_mat = network_graph
-        # self._network_max_length = max_edge_weights if max_edge_weights is not None else max(1,
         #                                                                                      network_graph.max().item())
         # self.filename_min_max_dist = filename
         # self.nb_node = network_graph.shape[0]
@@ -143,7 +141,6 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         return JraphSpace(
             features=node_feature,
             nb_nodes=self._static_params.nb_nodes,
-            max_edge_weights=self._static_params.network_max_length
         )
 
     def state_space(self, params: EnvParams):
