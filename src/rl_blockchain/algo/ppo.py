@@ -1,18 +1,19 @@
-from functools import partial
 import os
+from functools import partial
 from typing import Any, Callable, Dict, Optional, Tuple, Union
 
-import jax
-import jax.numpy as jnp
-from matplotlib.path import Path
-import optax
-from flax import struct
-import jraph as jr
 import distrax
 import flax.linen as nn
+import jax
+import jax.numpy as jnp
+import jraph as jr
+import optax
 import orbax.checkpoint as ocp
+from flax import struct
+from matplotlib.path import Path
 from tqdm import tqdm
 
+from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions
 from rl_blockchain.rl.wrappers.NormalizationWrapper import NormalizationWrapper
 
 
@@ -33,7 +34,7 @@ def make_embed_fn(latent_size):
 
 
 def _attention_logit_fn(
-    sender_attr: jnp.ndarray, receiver_attr: jnp.ndarray, edges: jnp.ndarray
+        sender_attr: jnp.ndarray, receiver_attr: jnp.ndarray, edges: jnp.ndarray
 ) -> jnp.ndarray:
     x = jnp.concatenate((sender_attr, receiver_attr, edges), axis=1)
     return nn.Dense(1)(x)
@@ -100,7 +101,12 @@ class PolicyNET_GAT(nn.Module):
         graph = gat2(graph)
         graph = gnn(graph)
 
-        return distrax.Categorical(logits=graph.globals)
+        mask = compute_legal_actions(graph)
+
+        full_inf = jnp.full((graph.globals.shape[0], self.action_dim), -jnp.inf)
+        masked_globals = jax.lax.select(mask, graph.globals, full_inf)
+
+        return distrax.Categorical(logits=masked_globals)
 
 
 class ValueNET_GAT(nn.Module):
@@ -216,17 +222,17 @@ def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
 
 @partial(jax.jit, static_argnames=('policy_apply', 'value_apply', 'policy_optimizer', 'value_optimizer', 'clip_ratio'))
 def update_ppo(
-    state: PPOState,
-    env_states: jr.GraphsTuple,
-    actions: jnp.ndarray,
-    old_logps: jnp.ndarray,
-    returns: jnp.ndarray,
-    advantages: jnp.ndarray,
-    policy_apply,
-    value_apply,
-    policy_optimizer,
-    value_optimizer,
-    clip_ratio: float = 0.2
+        state: PPOState,
+        env_states: jr.GraphsTuple,
+        actions: jnp.ndarray,
+        old_logps: jnp.ndarray,
+        returns: jnp.ndarray,
+        advantages: jnp.ndarray,
+        policy_apply,
+        value_apply,
+        policy_optimizer,
+        value_optimizer,
+        clip_ratio: float = 0.2
 ) -> tuple[PPOState, float, float]:
     """
     Performs a PPO update over a batch of transitions.
@@ -249,6 +255,7 @@ def update_ppo(
         mean_policy_loss: Scalar
         mean_value_loss: Scalar
     """
+
     # Loss function with aux outputs
     def loss_fn(policy_params, value_params):
         # compute per-sample losses
@@ -316,17 +323,17 @@ def update_ppo(
 
 
 def train_ppo(
-    env_fn,
-    env_params,
-    num_steps,
-    num_envs,
-    num_epochs,
-    batch_size,
-    lr,
-    gamma,
-    lambda_,
-    clip_ratio,
-    key,
+        env_fn,
+        env_params,
+        num_steps,
+        num_envs,
+        num_epochs,
+        batch_size,
+        lr,
+        gamma,
+        lambda_,
+        clip_ratio,
+        key,
 ) -> PPOState:
     env = env_fn(**env_params)
     init_state = env.reset()
@@ -377,14 +384,15 @@ def train_ppo(
             )
         )(rews, vals, dones, last_states)
         returns = advantages + vals
-    # Helper to flatten env × time dims
+
+        # Helper to flatten env × time dims
         def flatten(x):
             return x.reshape(-1, *x.shape[2:])
 
         # Flatten your action/logp/return/adv arrays
-        flat_a   = flatten(acts)
-        flat_lp  = flatten(logps)
-        flat_r   = flatten(returns)
+        flat_a = flatten(acts)
+        flat_lp = flatten(logps)
+        flat_r = flatten(returns)
         flat_adv = flatten(advantages)
 
         # Flatten *each* leaf in the GraphsTuple of states.blockchain
@@ -393,7 +401,7 @@ def train_ppo(
         # Permute to get randomized minibatches
         idx = jax.random.permutation(key, flat_a.shape[0])
         for start in range(0, idx.shape[0], batch_size):
-            batch_idx = idx[start : start + batch_size]
+            batch_idx = idx[start: start + batch_size]
 
             # Slice out a minibatch of graphs
             batch_graphs = jax.tree.map(lambda x: x[batch_idx], flat_graphs)
@@ -401,16 +409,16 @@ def train_ppo(
             # Now call update_ppo with the exact signature you defined:
             ppo_state, policy_loss, value_loss = update_ppo(
                 ppo_state,
-                batch_graphs,             # env_states: a GraphsTuple PyTree
-                flat_a[batch_idx],        # actions
-                flat_lp[batch_idx],       # old_logps
-                flat_r[batch_idx],        # returns
-                flat_adv[batch_idx],      # advantages
-                pol_net.apply,         # policy_apply
-                val_net.apply,          # value_apply
-                pol_opt,                  # policy_optimizer (optax.OptState)
-                val_opt,                  # value_optimizer
-                clip_ratio                # clip_ratio
+                batch_graphs,  # env_states: a GraphsTuple PyTree
+                flat_a[batch_idx],  # actions
+                flat_lp[batch_idx],  # old_logps
+                flat_r[batch_idx],  # returns
+                flat_adv[batch_idx],  # advantages
+                pol_net.apply,  # policy_apply
+                val_net.apply,  # value_apply
+                pol_opt,  # policy_optimizer (optax.OptState)
+                val_opt,  # value_optimizer
+                clip_ratio  # clip_ratio
             )
         ppo_state = ppo_state.replace(rng_key=key)
         print(f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}")
@@ -440,17 +448,18 @@ def eval_ppo_and_log(env_fn, env_params, ppo_state, reward_weights, num_episodes
         returns.append(tot)
     avg = sum(returns) / len(returns)
     print(f"Eval over {num_episodes} eps: avg return={avg:.3f}")
-    
+
+
 def eval_ppo(
-    ppo_state: PPOState,
-    env_fn: Callable[..., Any],
-    env_params: Dict[str, Any],
-    reward_weights: jnp.ndarray,
-    num_episodes: int = 10,
-    key: Optional[jnp.ndarray] = None,
-    gat_1_out: int = 64,
-    gat_2_out: int = 64,
-    gat_2_nodes_out: int = 64,
+        ppo_state: PPOState,
+        env_fn: Callable[..., Any],
+        env_params: Dict[str, Any],
+        reward_weights: jnp.ndarray,
+        num_episodes: int = 10,
+        key: Optional[jnp.ndarray] = None,
+        gat_1_out: int = 64,
+        gat_2_out: int = 64,
+        gat_2_nodes_out: int = 64,
 ):
     env = env_fn(**env_params)
     metrics = {
@@ -460,7 +469,8 @@ def eval_ppo(
         "infos": [],
     }
     key, subkey = jax.random.split(key)
-    pol_net = PolicyNET_GAT(gat_1_out, gat_2_out, gat_2_nodes_out, env.sample_legal_action(env.reset(), key=subkey).shape[0])
+    pol_net = PolicyNET_GAT(gat_1_out, gat_2_out, gat_2_nodes_out,
+                            env.sample_legal_action(env.reset(), key=subkey).shape[0])
     for _ in tqdm(range(num_episodes)):
         st = env.reset()
         done = False
@@ -479,38 +489,39 @@ def eval_ppo(
             rewards.append(reward)
             lengths += 1
             infos_.append(infos)
-            
+
         metrics["returns"].append(total_reward)
         metrics["lengths"].append(lengths)
         metrics["rewards"].append(rewards)
         metrics["infos"].append(infos_)
-        
+
     return metrics
 
+
 def train_epoch(
-    ppo_state: PPOState,
-    epoch: int,
-    env_fn: Callable[..., Any],
-    env_params: Dict[str, Any],
-    num_steps: int,
-    num_envs: int,
-    batch_size: int,
-    lr: float,
-    gamma: float,
-    lambda_: float,
-    clip_ratio: float,
-    reward_weights: jnp.ndarray,
-    gat1_out: int,
-    gat2_out: int,
-    gat2_nodes_out: int,
-    normalize_rewards: bool = True,
+        ppo_state: PPOState,
+        epoch: int,
+        env_fn: Callable[..., Any],
+        env_params: Dict[str, Any],
+        num_steps: int,
+        num_envs: int,
+        batch_size: int,
+        lr: float,
+        gamma: float,
+        lambda_: float,
+        clip_ratio: float,
+        reward_weights: jnp.ndarray,
+        gat1_out: int,
+        gat2_out: int,
+        gat2_nodes_out: int,
+        normalize_rewards: bool = True,
 ) -> Tuple[PPOState, float, float]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
     """
     env = env_fn(**env_params)
-    
+
     if normalize_rewards:
         # If using normalization, ensure the environment is wrapped accordingly
         env = NormalizationWrapper(env)
@@ -556,9 +567,9 @@ def train_epoch(
     def flatten(x):
         return x.reshape(-1, *x.shape[2:])
 
-    flat_a   = flatten(acts)
-    flat_lp  = flatten(logps)
-    flat_r   = flatten(returns)
+    flat_a = flatten(acts)
+    flat_lp = flatten(logps)
+    flat_r = flatten(returns)
     flat_adv = flatten(advantages)
     flat_graphs = jax.tree.map(lambda x: flatten(x), states.blockchain)
 
@@ -585,10 +596,11 @@ def train_epoch(
     ppo_state = ppo_state.replace(rng_key=key)
     return ppo_state, policy_loss, value_loss
 
+
 def create_checkpoint_manager(
-    checkpoint_dir: Union[str, Path],
-    max_to_keep: int = 5,
-    save_interval_steps: int = 1
+        checkpoint_dir: Union[str, Path],
+        max_to_keep: int = 5,
+        save_interval_steps: int = 1
 ) -> ocp.CheckpointManager:
     """
     Build and return an Orbax CheckpointManager that will keep at most
@@ -609,18 +621,19 @@ def create_checkpoint_manager(
     )
     return manager
 
+
 # Modified create_ppo_state to use the manager
 def create_ppo_state(
-    checkpoint_manager: ocp.CheckpointManager,
-    resume_dir: Optional[Path],
-    warm_start: bool,
-    env_fn: Callable[..., Any],
-    env_params: Dict[str, Any],
-    seed: int,
-    lr: float,
-    gat1_out: int,
-    gat2_out: int,
-    gat2_nodes_out: int
+        checkpoint_manager: ocp.CheckpointManager,
+        resume_dir: Optional[Path],
+        warm_start: bool,
+        env_fn: Callable[..., Any],
+        env_params: Dict[str, Any],
+        seed: int,
+        lr: float,
+        gat1_out: int,
+        gat2_out: int,
+        gat2_nodes_out: int
 ) -> PPOState:
     """
     Initialize or restore a PPOState.  If `resume_dir` is provided, uses

@@ -5,7 +5,6 @@ import jax
 import jax.numpy as jnp
 import jraph
 from gymnax.environments import environment, spaces
-from gymnax.environments.environment import TEnvState
 from jraph import GraphsTuple
 
 from rl_blockchain.BlockEnv.BlockchainGraph import create_jraph_from_adj_matrix_fast, STATIC_MASKS_DICT, \
@@ -170,12 +169,12 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         obs_graph = params.network_graph._replace(nodes=node_features)
         return obs_graph
 
-    def is_terminal(self, state: TEnvState, params: EnvParams) -> jax.Array:
+    def is_terminal(self, state: EnvState, params: EnvParams) -> jax.Array:
         done_steps = state.time >= params.max_steps_in_episode
         return jnp.array(done_steps)
 
     def step_env(self, key: jax.Array, state: EnvState, action: int | float | jax.Array, params: EnvParams) -> tuple[
-        GraphsTuple, TEnvState, jax.Array, jax.Array, dict[Any, Any]]:
+        GraphsTuple, EnvState, jax.Array, jax.Array, dict[Any, Any]]:
         selected_node = action_to_selected_node(action)
 
         is_inner = jnp.array(selected_node != -1)
@@ -212,10 +211,10 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
     def step(
             self,
             key: jax.Array,
-            state: TEnvState,
+            state: EnvState,
             action: int | float | jax.Array,
             params: EnvParams | None = None,
-    ) -> tuple[GraphsTuple, TEnvState, jax.Array, jax.Array, dict[Any, Any]]:
+    ) -> tuple[GraphsTuple, EnvState, jax.Array, jax.Array, dict[Any, Any]]:
         """Performs step transitions in the environment."""
         if params is None:
             params = self.default_params
@@ -243,7 +242,6 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
 
 @jax.jit
 def compute_legal_actions(obs: GraphsTuple) -> jnp.ndarray:
-    # TODO must be applied on an observation, not on the state
     chosen_nodes = obs.nodes[:, 0]
     nb_validators = obs.globals
 
