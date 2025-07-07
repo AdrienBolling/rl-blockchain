@@ -126,7 +126,7 @@ class EnvParams(environment.EnvParams):
     max_steps_in_episode = 2000
 
     @classmethod
-    def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int, filename: str,
+    def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int,
                rewards_weights: list = None) -> 'EnvParams':
         # nb_nodes = network_graph.shape[0]
         # min_max_array = load_min_max_array(filename)
