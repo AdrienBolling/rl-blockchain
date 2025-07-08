@@ -127,7 +127,7 @@ class EnvParams(environment.EnvParams):
 
     @classmethod
     def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int,
-               rewards_weights: list = None) -> 'EnvParams':
+               rewards_weights: list | jax.Array = None) -> 'EnvParams':
         # nb_nodes = network_graph.shape[0]
         # min_max_array = load_min_max_array(filename)
         # avg_distance = min_max_array[nb_nodes][0]

@@ -1,9 +1,11 @@
 import logging
+from argparse import Namespace
+
 import wandb
 
 def setup_logging(args
 ) -> None:
-    
+
     """
     Set up logging configuration.
 
@@ -18,14 +20,14 @@ def setup_logging(args
     Returns:
         None
     """
-    
+
     level = args.logging_level
     format = args.logging_format
     datefmt = args.logging_datefmt
     filename = args.logging_filename
     filemode = args.logging_filemode
     stream = args.logging_stream
-    
+
     if filename:
         logging.basicConfig(
             level=level,
@@ -41,8 +43,8 @@ def setup_logging(args
         console_handler.setFormatter(formatter)
         logging.getLogger().addHandler(console_handler)
     logging.getLogger().setLevel(level)
-    
-def setup_wandb(ARGS):
+
+def setup_wandb(ARGS: Namespace):
     """
     Set up Weights & Biases (wandb) logging.
 
@@ -52,7 +54,7 @@ def setup_wandb(ARGS):
     Returns:
         None
     """
-    
+
     if ARGS.checkpoint is not None:
         # If we need to resume a training, get the name of the checkpoint
         chkpt_name = ARGS.checkpoint
@@ -68,7 +70,7 @@ def setup_wandb(ARGS):
             except ValueError:
                 # When the project does not exist yet, assume no runs
                 chkpt_name = "run_0"
-            
+
         # Resume the run
         wandb.init(
             project=ARGS.wandb_project,
@@ -80,7 +82,7 @@ def setup_wandb(ARGS):
             group=ARGS.algo,
             tags=ARGS.wandb_tags,
         )
-    
+
     else:
         api = wandb.Api()
         try:

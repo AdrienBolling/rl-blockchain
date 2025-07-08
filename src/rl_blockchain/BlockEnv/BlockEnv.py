@@ -64,7 +64,7 @@ class JraphSpace(spaces.Space):
         # Add the features to the graph
         graph_with_features = graph._replace(
             nodes=features_with_chosen,
-            globals=sample_nb_val,
+            globals=jnp.array([sample_nb_val]),
         )
         return graph_with_features
 
@@ -118,6 +118,11 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         # self._first_nb_validators = nb_validators
 
     @property
+    def nb_nodes(self) -> int:
+        """Number of nodes in the environment."""
+        return self._static_params.nb_nodes
+
+    @property
     def default_params(self) -> EnvParams:
         return self._first_params
 
@@ -132,8 +137,8 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
     def observation_space(self, params: EnvParams):
         """Observation space of the environment."""
         node_feature = spaces.Box(
-            low=jnp.array([-self._static_params.box_clip, 0]),
-            high=jnp.array([self._static_params.box_clip, 1]),
+            low=jnp.array([-self._static_params.box_clip]),
+            high=jnp.array([self._static_params.box_clip]),
             shape=(1,),
             dtype=jnp.float32
         )
@@ -161,9 +166,10 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         stake_distribution_relative = stake_distribution_abs / self._static_params.horizon / self._static_params.nb_nodes
         preprocessed_stake_distribution = preprocessing_validator_distribution(
             stake_distribution_relative, self._static_params.box_clip)
-        node_features = jnp.column_stack((preprocessed_stake_distribution, state.chosen_nodes))
+        node_features = jnp.column_stack((state.chosen_nodes, preprocessed_stake_distribution))
+        global_features = jnp.array([params.nb_validators])
 
-        obs_graph = params.network_graph._replace(nodes=node_features)
+        obs_graph = params.network_graph._replace(nodes=node_features, globals=global_features)
         return obs_graph
 
     def is_terminal(self, state: EnvState, params: EnvParams) -> jax.Array:
@@ -227,7 +233,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         state = jax.tree.map(
             lambda x, y: jax.lax.select(done, x, y), state_re, state_st
         )
-        obs = obs_re._replace(nodes=jax.lax.select(done, obs_re.n_node, obs_st.n_node))
+        obs = obs_re._replace(nodes=jax.lax.select(done, obs_re.nodes, obs_st.nodes))
 
         return obs, state, reward, done, info
 
@@ -240,7 +246,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
 @jax.jit
 def compute_legal_actions(obs: GraphsTuple) -> jnp.ndarray:
     chosen_nodes = obs.nodes[:, 0]
-    nb_validators = obs.globals
+    nb_validators = obs.globals[0]
 
     current_nb_val = jnp.sum(chosen_nodes)
     available = jnp.logical_not(chosen_nodes)

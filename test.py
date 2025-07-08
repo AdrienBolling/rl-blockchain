@@ -1,28 +1,10 @@
 import jax
 import jax.numpy as jnp
+
+from rl_blockchain.BlockEnv import create_rd_adj_matrix, EnvParams, BlockchainEnv, StaticEnvParams
 from rl_blockchain.algo.ppo import train_ppo, eval_ppo_and_log
-from rl_blockchain.rl.env import BlockchainEnv_intermediary
 
 
-def make_env_params(key: jnp.ndarray,
-                     n_nodes: int = 5,
-                     voting_nodes: int = 2):
-    """
-    Create synthetic environment parameters for a quick test run.
-    - n_nodes: number of nodes in the graph
-    - n_features: size of the node feature vector (unused by env except for shaping)
-    - voting_nodes: number of votes per outer step
-    """
-    # Split the key for reproducibility
-    key, subkey = jax.random.split(key)
-    # Random symmetric distance matrix
-    A = jax.random.uniform(key, (n_nodes, n_nodes))
-    dist = (A + A.T) * 0.5
-    return {
-        "node_distance_matrix": dist,
-        "voting_nodes": voting_nodes,
-        "random_key": subkey,
-    }
 
 
 def main():
@@ -43,10 +25,12 @@ def main():
     key, subkey = jax.random.split(key)
 
     # Create environment params
-    env_params = make_env_params(key=subkey,
-                                 n_nodes=6,
-                                 n_features=4,
-                                 voting_nodes=3)
+
+
+    adj_mat = create_rd_adj_matrix(25, subkey)
+    env_params = EnvParams.create(adj_mat, 7, [1, 1])
+    static_params = StaticEnvParams.create(25, "ref_grid_min_max/grid_25.csv")
+    env = BlockchainEnv(env_params, static_params)
     
     key, subkey = jax.random.split(subkey)
 
@@ -56,8 +40,7 @@ def main():
     # If you update train_ppo to return PPOState, you can capture it like:
     # final_state = train_ppo(...)
     ppo_state = train_ppo(
-        BlockchainEnv_intermediary,
-        env_params,
+        env,
         num_steps, num_envs, num_epochs,
         batch_size, lr,
         gamma, lambda_, clip_ratio, subkey
@@ -65,10 +48,11 @@ def main():
     key, subkey = jax.random.split(subkey)
     # ===== Evaluation =====
     print("[EVAL] Running evaluation with default (random) policy...")
+    exit(0)
     # Since train_ppo does not return the trained state, this will evaluate the initial policy.
     # To evaluate the truly trained policy, modify train_ppo to return PPOState and pass that here.
     eval_ppo_and_log(
-        BlockchainEnv_intermediary,
+        env,
         env_params,
         ppo_state,
         reward_weights=jnp.array([0.5, 0.5]),

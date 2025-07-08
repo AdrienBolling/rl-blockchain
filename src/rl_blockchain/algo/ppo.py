@@ -10,11 +10,12 @@ import jraph as jr
 import optax
 import orbax.checkpoint as ocp
 from flax import struct
+from gymnax.environments import environment
 from matplotlib.path import Path
 from tqdm import tqdm
 
-from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions
-from rl_blockchain.rl.wrappers.NormalizationWrapper import NormalizationWrapper
+from rl_blockchain.BlockEnv import EnvParams, create_rd_adj_matrix
+from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions, BlockchainEnv
 
 
 @struct.dataclass
@@ -36,6 +37,7 @@ def make_embed_fn(latent_size):
 def _attention_logit_fn(
         sender_attr: jnp.ndarray, receiver_attr: jnp.ndarray, edges: jnp.ndarray
 ) -> jnp.ndarray:
+    edges = edges[:, None]
     x = jnp.concatenate((sender_attr, receiver_attr, edges), axis=1)
     return nn.Dense(1)(x)
 
@@ -48,6 +50,7 @@ class PolicyNET_GAT(nn.Module):
 
     @nn.compact
     def __call__(self, graph: jr.GraphsTuple):
+        mask = compute_legal_actions(graph)
         # Two GCN layers
         gcn1 = jr.GraphConvolution(
             update_node_fn=lambda n: jax.nn.relu(
@@ -99,12 +102,12 @@ class PolicyNET_GAT(nn.Module):
         graph = gcn2(graph)
         graph = gat1(graph)
         graph = gat2(graph)
+        graph = graph._replace(edges=graph.edges[:, None])
         graph = gnn(graph)
 
-        mask = compute_legal_actions(graph)
-
-        full_inf = jnp.full((graph.globals.shape[0], self.action_dim), -jnp.inf)
-        masked_globals = jax.lax.select(mask, graph.globals, full_inf)
+        squeezed_globals = graph.globals.squeeze()
+        full_inf = jnp.full((self.action_dim,), -jnp.inf)
+        masked_globals = jax.lax.select(mask, squeezed_globals, full_inf)
 
         return distrax.Categorical(logits=masked_globals)
 
@@ -165,40 +168,51 @@ class ValueNET_GAT(nn.Module):
         graph = gcn2(graph)
         graph = gat1(graph)
         graph = gat2(graph)
+        graph = graph._replace(edges=graph.edges[:, None])
         graph = gnn(graph)
 
         # Return shape [batch]
         return graph.globals.squeeze()
 
 
-@partial(jax.jit, static_argnames=('env', 'policy_apply', 'value_apply', 'num_steps'))
-def rollout(rng_key, env, policy_apply, value_apply, state, num_steps, reward_weights):
-    """Runs one episode for num_steps, returns trajectories and final state."""
+@partial(jax.jit, static_argnames=('pol_model', 'val_model', 'env', 'steps_in_episode'))
+def rollout(key_input, env: environment.Environment,
+            pol_model: nn.Module, val_model: nn.Module, ppo_state: PPOState,
+            env_params: EnvParams, steps_in_episode: int):
+    """Rollout a jitted gymnax episode with lax.scan."""
+    # Reset the environment
+    key_reset, key_episode = jax.random.split(key_input)
+    first_obs, first_state = env.reset(key_reset, env_params)
 
-    def step_fn(carry, _):
-        key, st = carry
-        key, subkey = jax.random.split(key)
+    def policy_step(state_input, tmp):
+        """lax.scan compatible step transition in jax env."""
+        obs, state, key = state_input
+        key, key_step, key_net = jax.random.split(key, 3)
+        action_distribution = pol_model.apply(ppo_state.policy_params, obs)
+        action = action_distribution.sample(seed=key_net)
+        logp = action_distribution.log_prob(action)
+        value = val_model.apply(ppo_state.value_params, obs)
 
-        # Unwrap graph from Env State
-        graph = st.blockchain
-        dist = policy_apply(graph)
-        act = dist.sample(seed=subkey)
-        logp = dist.log_prob(act)
-        val = value_apply(graph)
-
-        next_st, rew, done, info = env.step(st, act, reward_weights)
-        next_st = jax.lax.cond(
-            done, lambda _: env.reset(), lambda _: next_st, operand=None
+        next_obs, next_state, reward, done, _ = env.step(
+            key_step, state, action, env_params
         )
 
-        traj = (st, act, logp, rew, done, val)
-        return (key, next_st), traj
+        carry = [next_obs, next_state, key]
+        traj = (next_obs, action, logp, reward, done, value)
+        return carry, traj
 
-    (key_final, st_end), trajs = jax.lax.scan(
-        step_fn, (rng_key, state), None, length=num_steps
+    # Scan over episode step loop
+    (obs_end, _, _), trajs = jax.lax.scan(
+        policy_step,
+        [first_obs, first_state, key_episode],
+        None,
+        steps_in_episode
     )
-    states, actions, logps, rewards, dones, values = trajs
-    return states, actions, logps, rewards, dones, values, st_end, key_final
+
+    last_value = val_model.apply(ppo_state.value_params, obs_end)
+    # Return masked sum of rewards accumulated by agent in episode
+    observations, actions, logps, rewards, dones, values = trajs
+    return observations, actions, logps, rewards, dones, values, last_value
 
 
 @jax.jit
@@ -222,8 +236,8 @@ def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
 
 @partial(jax.jit, static_argnames=('policy_apply', 'value_apply', 'policy_optimizer', 'value_optimizer', 'clip_ratio'))
 def update_ppo(
-        state: PPOState,
-        env_states: jr.GraphsTuple,
+        ppo_state: PPOState,
+        observation: jr.GraphsTuple,
         actions: jnp.ndarray,
         old_logps: jnp.ndarray,
         returns: jnp.ndarray,
@@ -238,8 +252,8 @@ def update_ppo(
     Performs a PPO update over a batch of transitions.
 
     Args:
-        state: Current PPOState
-        env_states: Batched GraphsTuple of observations, shape [B, ...]
+        ppo_state: Current PPOState
+        observation: Batched GraphsTuple of observations, shape [B, ...]
         actions: Actions array, shape [B, action_dim]
         old_logps: Log probabilities under old policy, shape [B]
         returns: Discounted returns, shape [B]
@@ -277,7 +291,7 @@ def update_ppo(
         )(
             policy_params,
             value_params,
-            env_states,
+            observation,
             actions,
             old_logps,
             returns,
@@ -293,26 +307,26 @@ def update_ppo(
     # Compute gradients
     (loss_val, (mean_pl, mean_vl)), (policy_grads, value_grads) = jax.value_and_grad(
         loss_fn, has_aux=True, argnums=(0, 1)
-    )(state.policy_params, state.value_params)
+    )(ppo_state.policy_params, ppo_state.value_params)
 
     # Apply policy optimizer step
     policy_updates, new_pol_opt_state = policy_optimizer.update(
-        policy_grads, state.policy_opt_state
+        policy_grads, ppo_state.policy_opt_state
     )
     new_policy_params = optax.apply_updates(
-        state.policy_params, policy_updates
+        ppo_state.policy_params, policy_updates
     )
 
     # Apply value optimizer step
     value_updates, new_val_opt_state = value_optimizer.update(
-        value_grads, state.value_opt_state
+        value_grads, ppo_state.value_opt_state
     )
     new_value_params = optax.apply_updates(
-        state.value_params, value_updates
+        ppo_state.value_params, value_updates
     )
 
     # Construct new state
-    new_state = state.replace(
+    new_state = ppo_state.replace(
         policy_params=new_policy_params,
         value_params=new_value_params,
         policy_opt_state=new_pol_opt_state,
@@ -323,8 +337,7 @@ def update_ppo(
 
 
 def train_ppo(
-        env_fn,
-        env_params,
+        env: BlockchainEnv,
         num_steps,
         num_envs,
         num_epochs,
@@ -335,34 +348,44 @@ def train_ppo(
         clip_ratio,
         key,
 ) -> PPOState:
-    env = env_fn(**env_params)
-    init_state = env.reset()
-    dummy_graph = init_state.blockchain
-    key, subkey = jax.random.split(key)
-    dummy_act = env.sample_legal_action(init_state, key=subkey)
-    key, sub = jax.random.split(key)
-    pol_net = PolicyNET_GAT(64, 64, 64, dummy_act.shape[0])
+    # init_state = env.reset()
+
+    obs_key, pol_key, val_key, ppo_key = jax.random.split(key, 4)
+
+    default_params = env.default_params
+    action_range = env.action_space(default_params).n
+    sample_obs = env.observation_space(default_params).sample(obs_key)
+
+    pol_net = PolicyNET_GAT(64, 64, 64, action_range)
     val_net = ValueNET_GAT(64, 64, 64)
     # Initialize with GraphsTuple
-    pol_vars = pol_net.init(sub, dummy_graph)
-    val_vars = val_net.init(sub, dummy_graph)
+    pol_vars = pol_net.init(pol_key, sample_obs)
+    val_vars = val_net.init(val_key, sample_obs)
 
     pol_opt = optax.adam(lr)
     val_opt = optax.adam(lr)
     pol_opt_state = pol_opt.init(pol_vars)
     val_opt_state = val_opt.init(val_vars)
-    ppo_state = PPOState(pol_vars, val_vars, pol_opt_state, val_opt_state, key)
+    ppo_state = PPOState(pol_vars, val_vars, pol_opt_state, val_opt_state, ppo_key)
 
     # rollout fns expect graph inputs inside rollout
     def single_rollout(rng):
+        key_map, first_key_step = jax.random.split(rng)
+        new_adj_mat = create_rd_adj_matrix(env.nb_nodes, key_map)
+        new_param = EnvParams.create(
+            new_adj_mat,
+            default_params.nb_validators,
+            default_params.rewards_weights,
+        )
+
         return rollout(
-            rng,
+            first_key_step,
             env,
-            lambda g: pol_net.apply(ppo_state.policy_params, g),
-            lambda g: val_net.apply(ppo_state.value_params, g),
-            env.reset(),
+            pol_net,
+            val_net,
+            ppo_state,
+            new_param,
             num_steps,
-            jnp.array([0.5, 0.5]),
         )
 
     vm_rollout = jax.vmap(single_rollout)
@@ -370,19 +393,20 @@ def train_ppo(
     for epoch in range(num_epochs):
         key, *subkeys = jax.random.split(ppo_state.rng_key, num_envs + 1)
         subkeys = jnp.stack(subkeys)
-        states, acts, logps, rews, dones, vals, last_states, _ = vm_rollout(subkeys)
+        observations, acts, logps, rews, dones, vals, last_values = vm_rollout(subkeys)
+
         # Extract graphs and last graphs
         # GAE over each env
         advantages = jax.vmap(
-            lambda r, v, d, st: compute_gae(
+            lambda r, v, d, last_value: compute_gae(
                 r,
                 v,
                 d,
-                val_net.apply(ppo_state.value_params, st.blockchain),
+                last_value,
                 gamma,
                 lambda_,
             )
-        )(rews, vals, dones, last_states)
+        )(rews, vals, dones, last_values)
         returns = advantages + vals
 
         # Helper to flatten env × time dims
@@ -396,7 +420,7 @@ def train_ppo(
         flat_adv = flatten(advantages)
 
         # Flatten *each* leaf in the GraphsTuple of states.blockchain
-        flat_graphs = jax.tree.map(flatten, states.blockchain)
+        flat_graphs = jax.tree.map(flatten, observations)
 
         # Permute to get randomized minibatches
         idx = jax.random.permutation(key, flat_a.shape[0])
@@ -420,8 +444,9 @@ def train_ppo(
                 val_opt,  # value_optimizer
                 clip_ratio  # clip_ratio
             )
-        ppo_state = ppo_state.replace(rng_key=key)
+        ppo_state = ppo_state.replace(rng_key=ppo_key)
         print(f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}")
+        print(f"rewards : {rews.sum():.3f}, longueur {rews.shape}, dones {dones.sum():.3f}")
 
     return ppo_state
 
@@ -501,8 +526,8 @@ def eval_ppo(
 def train_epoch(
         ppo_state: PPOState,
         epoch: int,
-        env_fn: Callable[..., Any],
-        env_params: Dict[str, Any],
+        env: environment.Environment,
+        env_params: EnvParams,
         num_steps: int,
         num_envs: int,
         batch_size: int,
@@ -514,17 +539,17 @@ def train_epoch(
         gat1_out: int,
         gat2_out: int,
         gat2_nodes_out: int,
-        normalize_rewards: bool = True,
+        normalize_rewards: bool = False,
 ) -> Tuple[PPOState, float, float]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
     """
-    env = env_fn(**env_params)
 
-    if normalize_rewards:
-        # If using normalization, ensure the environment is wrapped accordingly
-        env = NormalizationWrapper(env)
+    # TODO
+    # if normalize_rewards:
+    #    # If using normalization, ensure the environment is wrapped accordingly
+    #    env = NormalizationWrapper(env)
 
     # Split RNG for rollouts
     key, *subkeys = jax.random.split(ppo_state.rng_key, num_envs + 1)
@@ -533,7 +558,7 @@ def train_epoch(
     # Determine action dim
     init_state = env.reset()
     key, subkey = jax.random.split(key)
-    dummy_act = env.sample_legal_action(init_state, key=subkey)
+    dummy_act = env.action_space(env.default_params).sample(subkey)
 
     pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, dummy_act.shape[0])
     val_net = ValueNET_GAT(gat1_out, gat2_out, gat2_nodes_out)
@@ -551,7 +576,7 @@ def train_epoch(
         )
 
     vm_rollout = jax.vmap(single_rollout)
-    states, acts, logps, rews, dones, vals, last_states, _ = vm_rollout(subkeys)
+    states, acts, logps, rews, dones, vals, last_states = vm_rollout(subkeys)
 
     # Compute advantages and returns
     advantages = jax.vmap(
@@ -627,8 +652,7 @@ def create_ppo_state(
         checkpoint_manager: ocp.CheckpointManager,
         resume_dir: Optional[Path],
         warm_start: bool,
-        env_fn: Callable[..., Any],
-        env_params: Dict[str, Any],
+        env: environment.Environment,
         seed: int,
         lr: float,
         gat1_out: int,
@@ -661,18 +685,15 @@ def create_ppo_state(
 
     # --- fresh initialization ---
     key = jax.random.PRNGKey(seed)
-    env = env_fn(**env_params)
-    init_state = env.reset()
-    dummy_graph = init_state.blockchain
-    key, subkey = jax.random.split(key)
-    dummy_act = env.sample_legal_action(init_state, key=subkey)
+    graph_key, act_key, pol_key, val_key = jax.random.split(key, 4)
+    dummy_graph = env.observation_space(env.default_params).sample(graph_key)
+    dummy_act = env.action_space(env.default_params).sample(act_key)
 
     pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, dummy_act.shape[0])
     val_net = ValueNET_GAT(gat1_out, gat2_out, gat2_nodes_out)
 
-    pol_vars = pol_net.init(subkey, dummy_graph)
-    key, subkey = jax.random.split(key)
-    val_vars = val_net.init(subkey, dummy_graph)
+    pol_vars = pol_net.init(pol_key, dummy_graph)
+    val_vars = val_net.init(val_key, dummy_graph)
 
     pol_opt = optax.adam(lr)
     val_opt = optax.adam(lr)

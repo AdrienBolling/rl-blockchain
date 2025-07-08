@@ -1,12 +1,15 @@
-from argparse import ArgumentParser
 import os
+from argparse import ArgumentParser, Namespace
+
+REF_FILENAME = {
+    25: "ref_grid_min_max/grid_25.csv",
+}
 
 
-def _parse_args():
-
+def _parse_args() -> Namespace:
     # Create an argument parser
     parser = ArgumentParser(description="Run PPO training or evaluation.")
-    
+
     parser.add_argument(
         "--env",
         type=str,
@@ -16,7 +19,7 @@ def _parse_args():
     parser.add_argument(
         "--n-nodes",
         type=int,
-        default=20,
+        default=25,
         help="Number of nodes in the environment. Default is 20.",
     )
     parser.add_argument(
@@ -37,7 +40,7 @@ def _parse_args():
         default=os.path.join(os.getcwd(), "checkpoints"),
         help="Directory to save checkpoints. Default is 'checkpoints' in the cwd.",
     )
-    
+
     # Logging args
     parser.add_argument(
         "--log-dir",
@@ -81,7 +84,7 @@ def _parse_args():
         default=False,
         help="If True, logs to console as well. Default is False.",
     )
-    
+
     # Wandb args
     parser.add_argument(
         "--wandb-project",
@@ -185,7 +188,7 @@ def _parse_args():
         default=False,
         help="If True, warm start the training from the checkpoint. Default is False.",
     )
-    
+
     # Eval of the PPO agent training
     train_parser.add_argument(
         "--eval-interval",
@@ -199,7 +202,5 @@ def _parse_args():
         default=5,
         help="Number of episodes to run for evaluation. Default is 10.",
     )
-
-
 
     return parser.parse_args()

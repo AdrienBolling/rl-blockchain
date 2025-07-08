@@ -1,15 +1,20 @@
+import logging
+import re
+from argparse import Namespace
+
 import jax
 import jax.numpy as jnp
 import numpy as np
+import orbax.checkpoint as ocp
 import wandb
-import re
+from tqdm import tqdm
+
+from rl_blockchain.BlockEnv import BlockchainEnv
+from rl_blockchain.BlockEnv import EnvParams, create_rd_adj_matrix
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch
 from rl_blockchain.algo.ppo import eval_ppo as ev_ppo
-import os
-import logging
-import orbax.checkpoint as ocp
 from rl_blockchain.rl.env import BlockchainEnv_intermediary
-from tqdm import tqdm
+from rl_blockchain.scripts.parser import REF_FILENAME
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +54,7 @@ def log_to_wandb(logs: dict, mode: str = "train"):
     wandb.log(logs, step=logs["train"]["epoch"])
 
 
-def train_ppo(ARGS):
+def train_ppo(ARGS: Namespace):
     """
     Train a PPO agent on the Blockchain environment.
 
@@ -70,13 +75,13 @@ def train_ppo(ARGS):
     clip_ratio = ARGS.clip_ratio
     reward_weights = jnp.array(ARGS.reward_weights)
     key = jax.random.PRNGKey(ARGS.seed)
-    key, subkey = jax.random.split(key)
+    key, key_param = jax.random.split(key)
     # Create environment parameters
-    env_params = make_env_params(
-        key=subkey,
-        n_nodes=ARGS.n_nodes,
-        voting_nodes=ARGS.voting_nodes
-    )
+
+
+    adj_mat = create_rd_adj_matrix(ARGS.n_nodes, key_param)
+    env_params = EnvParams.create(adj_mat, ARGS.voting_nodes, [1, 1])
+    env = BlockchainEnv(env_params, REF_FILENAME[ARGS.n_nodes])
 
     # If we need to resume a training, get the name of the checkpoint
     chkpt_name = ARGS.checkpoint
@@ -110,8 +115,9 @@ def train_ppo(ARGS):
         save_interval_steps=1,
     )
 
-    # Create the environment
-    env_fn = BlockchainEnv_intermediary
+    first_params = env.default_params
+
+
 
     gat1_out, gat2_out, gat2_nodes_out = ARGS.gat_arch
 
@@ -120,8 +126,7 @@ def train_ppo(ARGS):
         checkpoint_manager=checkpoint_manager,
         resume_dir=chkpt_dir if ARGS.checkpoint else None,
         warm_start=ARGS.warm_start,
-        env_fn=env_fn,
-        env_params=env_params,
+        env=env,
         seed=ARGS.seed,
         lr=lr,
         gat1_out=gat1_out,
@@ -135,7 +140,7 @@ def train_ppo(ARGS):
         ppo_state, policy_loss, value_loss = train_epoch(
             ppo_state=ppo_state,
             epoch=epoch,
-            env_fn=env_fn,
+            env=env,
             env_params=env_params,
             num_steps=num_steps,
             num_envs=num_envs,

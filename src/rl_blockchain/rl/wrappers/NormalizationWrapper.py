@@ -25,7 +25,7 @@ class NormalizationWrapper(Wrapper):
     A wrapper for normalizing rewards in a reinforcement learning environment.
     This wrapper maintains the mean and variance of the rewards to normalize them.
     """
-    
+    # TODO
     def __init__(self, env, eps:float = 1e-8, clip_range: float = 10.0):
         """
         Initialize the NormalizationWrapper.
