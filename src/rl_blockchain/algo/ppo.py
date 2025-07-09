@@ -460,24 +460,24 @@ def train_ppo(
     return ppo_state
 
 
-def eval_ppo_and_log(env_fn, env_params, ppo_state, reward_weights, num_episodes=10, key=None):
-    env = env_fn(**env_params)
+def eval_ppo_and_log(env: BlockchainEnv, env_params: EnvParams, ppo_state: PPOState, num_episodes: int = 10, key=None):
     returns = []
+    pol_net = PolicyNET_GAT(64, 64, 64,
+                            env.action_space(env_params).n)
     for _ in range(num_episodes):
-        st = env.reset()
+        key, subkey_mat, subkey_st = jax.random.split(key, 3)
+        adj_matrix = create_rd_adj_matrix(env.nb_nodes, subkey_mat)
+        temp_params = EnvParams.create(adj_matrix,
+                                       env_params.nb_validators,
+                                       env_params.rewards_weights)
+        obs, st = env.reset(subkey_st, temp_params)
         done = False
         tot = 0.0
         while not done:
-            graph = st.blockchain
             key, subkey = jax.random.split(key)
-            dist = PolicyNET_GAT(
-                gat1_output_dim=64,
-                gat2_output_dim=64,
-                gat2_nodes_output_dim=64,
-                action_dim=env.sample_legal_action(st, key=subkey).shape[0],
-            ).apply(ppo_state.policy_params, graph)
+            dist = pol_net.apply(ppo_state.policy_params, obs)
             a = dist.mode()
-            st, r, done, _ = env.step(st, a, reward_weights)
+            obs, st, r, done, _ = env.step(subkey, st, a, env_params)
             tot += r
         returns.append(tot)
     avg = sum(returns) / len(returns)

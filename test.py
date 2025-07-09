@@ -48,17 +48,9 @@ def main():
     key, subkey = jax.random.split(subkey)
     # ===== Evaluation =====
     print("[EVAL] Running evaluation with default (random) policy...")
-    exit(0)
     # Since train_ppo does not return the trained state, this will evaluate the initial policy.
     # To evaluate the truly trained policy, modify train_ppo to return PPOState and pass that here.
-    eval_ppo_and_log(
-        env,
-        env_params,
-        ppo_state,
-        reward_weights=jnp.array([0.5, 0.5]),
-        num_episodes=1,
-        key=subkey,
-    )
+    eval_ppo_and_log(env, env_params, ppo_state, num_episodes=1, key=subkey)
     print("[EVAL] Evaluation completed.")
 
 
