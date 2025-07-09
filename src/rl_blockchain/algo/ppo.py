@@ -15,7 +15,7 @@ from matplotlib.path import Path
 from tqdm import tqdm
 
 from rl_blockchain.BlockEnv import EnvParams, create_rd_adj_matrix
-from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions, BlockchainEnv
+from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions_obs, BlockchainEnv
 
 
 @struct.dataclass
@@ -49,8 +49,8 @@ class PolicyNET_GAT(nn.Module):
     action_dim: int
 
     @nn.compact
-    def __call__(self, graph: jr.GraphsTuple):
-        mask = compute_legal_actions(graph)
+    def __call__(self, graph: jr.GraphsTuple) -> distrax.Categorical:
+        mask = compute_legal_actions_obs(graph)
         # Two GCN layers
         gcn1 = jr.GraphConvolution(
             update_node_fn=lambda n: jax.nn.relu(
@@ -246,8 +246,10 @@ def update_ppo(
         value_apply,
         policy_optimizer,
         value_optimizer,
-        clip_ratio: float = 0.2
-) -> tuple[PPOState, float, float]:
+        clip_ratio: float = 0.2,
+        value_coef: float = 0.5,
+        entropy_coef: float = 0.01
+) -> tuple[PPOState, float, float, float]:
     """
     Performs a PPO update over a batch of transitions.
 
@@ -263,6 +265,8 @@ def update_ppo(
         policy_optimizer: Optax optimizer for policy
         value_optimizer: Optax optimizer for value
         clip_ratio: PPO clipping parameter
+        value_coef: Coefficient for value loss
+        entropy_coef: Coefficient for entropy regularization
 
     Returns:
         new_state: Updated PPOState
@@ -277,17 +281,21 @@ def update_ppo(
             dist = policy_apply(p_params, graph)
             new_lp = dist.log_prob(a)
             ratio = jnp.exp(new_lp - old_lp)
+
             clipped = jnp.clip(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
             policy_loss = -jnp.minimum(ratio * adv, clipped * adv)
+            entropy = dist.entropy()
+
             value_pred = value_apply(v_params, graph)
-            value_loss = (ret - value_pred) ** 2
-            return policy_loss + 0.5 * value_loss, (policy_loss, value_loss)
+            diff = ret - value_pred
+            value_loss = jnp.inner(diff, diff)
+            return policy_loss + value_coef * value_loss - entropy * entropy_coef, (policy_loss, value_loss, entropy)
 
         # Vectorize over batch
-        total_loss, (pl_batch, vl_batch) = jax.vmap(
+        total_loss, (pl_batch, vl_batch, ent_batch) = jax.vmap(
             sample_loss,
             in_axes=(None, None, 0, 0, 0, 0, 0),
-            out_axes=(0, (0, 0))
+            out_axes=(0, (0, 0, 0))
         )(
             policy_params,
             value_params,
@@ -299,13 +307,14 @@ def update_ppo(
         )
         # total_loss is array of shape [B], pl_batch/ vl_batch each shape [B]
         mean_loss = jnp.mean(total_loss)
-        mean_pl = jnp.mean(pl_batch)
-        mean_vl = jnp.mean(vl_batch)
+        mean_pl_batch = jnp.mean(pl_batch)
+        mean_vl_batch = jnp.mean(vl_batch)
+        mean_ent_batch = jnp.mean(ent_batch)
         # return mean total_loss as loss, and policy/value losses as aux
-        return mean_loss, (mean_pl, mean_vl)
+        return mean_loss, (mean_pl_batch, mean_vl_batch, mean_ent_batch)
 
     # Compute gradients
-    (loss_val, (mean_pl, mean_vl)), (policy_grads, value_grads) = jax.value_and_grad(
+    (loss_val, (mean_pl, mean_vl, mean_ent)), (policy_grads, value_grads) = jax.value_and_grad(
         loss_fn, has_aux=True, argnums=(0, 1)
     )(ppo_state.policy_params, ppo_state.value_params)
 
@@ -333,7 +342,7 @@ def update_ppo(
         value_opt_state=new_val_opt_state,
     )
 
-    return new_state, mean_pl, mean_vl
+    return new_state, mean_pl, mean_vl, mean_ent
 
 
 def train_ppo(
@@ -431,7 +440,7 @@ def train_ppo(
             batch_graphs = jax.tree.map(lambda x: x[batch_idx], flat_graphs)
 
             # Now call update_ppo with the exact signature you defined:
-            ppo_state, policy_loss, value_loss = update_ppo(
+            ppo_state, policy_loss, value_loss, entropy = update_ppo(
                 ppo_state,
                 batch_graphs,  # env_states: a GraphsTuple PyTree
                 flat_a[batch_idx],  # actions
@@ -445,7 +454,7 @@ def train_ppo(
                 clip_ratio  # clip_ratio
             )
         ppo_state = ppo_state.replace(rng_key=ppo_key)
-        print(f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}")
+        print(f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}, Entropy={entropy:.3f}")
         print(f"rewards : {rews.sum():.3f}, longueur {rews.shape}, dones {dones.sum():.3f}")
 
     return ppo_state
@@ -603,7 +612,7 @@ def train_epoch(
     for start in range(0, perm.shape[0], batch_size):
         idx = perm[start: start + batch_size]
         batch_graphs = jax.tree.map(lambda x: x[idx], flat_graphs)
-        ppo_state, policy_loss, value_loss = update_ppo(
+        ppo_state, policy_loss, value_loss, entropy = update_ppo(
             ppo_state,
             batch_graphs,
             flat_a[idx],

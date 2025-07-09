@@ -7,7 +7,7 @@
     dependencies = [
         "distrax>=0.1.5",
         "flax>=0.10.6",
-        "jax>=0.6.0",
+        "jax>=0.6.1",
         "jraph>=0.0.6.dev0",
         "matplotlib>=3.10.3",
         "networkx>=3.4.2",

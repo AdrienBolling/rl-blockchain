@@ -9,7 +9,7 @@ from rl_blockchain.algo.ppo import train_ppo, eval_ppo_and_log
 
 def main():
     # Hyperparameters
-    num_steps = 100                # steps per rollout
+    num_steps = 10000                # steps per rollout
     num_envs  = 4                  # parallel environments
     num_epochs = 5                 # training epochs
     batch_size = 32
