@@ -20,12 +20,12 @@ def _parse_args() -> Namespace:
         "--n-nodes",
         type=int,
         default=25,
-        help="Number of nodes in the environment. Default is 20.",
+        help="Number of nodes in the environment. Default is 25.",
     )
     parser.add_argument(
         "--voting-nodes",
         type=int,
-        default=5,
+        default=7,
         help="Number of voting nodes in the environment. Default is 5.",
     )
     parser.add_argument(
@@ -124,7 +124,7 @@ def _parse_args() -> Namespace:
         "--num-steps",
         type=int,
         default=1000,
-        help="Number of steps per epoch. Default is 1000.",
+        help="Number of steps per epoch. Default is 4000.",
     )
     train_parser.add_argument(
         "--num-envs",

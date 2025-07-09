@@ -1,6 +1,6 @@
 import os
 from functools import partial
-from typing import Any, Callable, Dict, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
 import distrax
 import flax.linen as nn
@@ -378,13 +378,10 @@ def train_ppo(
     ppo_state = PPOState(pol_vars, val_vars, pol_opt_state, val_opt_state, ppo_key)
 
     # rollout fns expect graph inputs inside rollout
-    def single_rollout(rng):
-        key_map, first_key_step = jax.random.split(rng)
-        new_param = EnvParams.create_random(env.nb_nodes, key_map, default_params.nb_validators,
-                                            default_params.rewards_weights)
-
+    @jax.jit
+    def single_rollout(rng: jax.Array, new_param: EnvParams):
         return rollout(
-            first_key_step,
+            rng,
             env,
             pol_net,
             val_net,
@@ -395,10 +392,19 @@ def train_ppo(
 
     vm_rollout = jax.vmap(single_rollout)
 
+    params_map = jax.vmap(
+        lambda key_map: EnvParams.create_random(env.nb_nodes, key_map, env.default_params.nb_validators,
+                                                env.default_params.rewards_weights),
+    )
+
     for epoch in range(num_epochs):
-        key, *subkeys = jax.random.split(ppo_state.rng_key, num_envs + 1)
-        subkeys = jnp.stack(subkeys)
-        observations, acts, logps, rews, dones, vals, last_values = vm_rollout(subkeys)
+        new_ppo_key, rollout_key, params_key = jax.random.split(ppo_state.rng_key, 3)
+        subkeys = jax.random.split(rollout_key, num_envs)
+        subkeys_params = jax.random.split(params_key, num_envs)
+
+        params_list = params_map(subkeys_params)
+
+        observations, acts, logps, rews, dones, vals, last_values = vm_rollout(subkeys, params_list)
 
         # Extract graphs and last graphs
         # GAE over each env
@@ -449,7 +455,7 @@ def train_ppo(
                 val_opt,  # value_optimizer
                 clip_ratio  # clip_ratio
             )
-        ppo_state = ppo_state.replace(rng_key=ppo_key)
+        ppo_state = ppo_state.replace(rng_key=new_ppo_key)
         print(f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}, Entropy={entropy:.3f}")
         print(f"rewards : {rews.sum():.3f}, longueur {rews.shape}, dones {dones.sum():.3f}")
 
@@ -533,25 +539,15 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
     #    # If using normalization, ensure the environment is wrapped accordingly
     #    env = NormalizationWrapper(env)
 
-    # Split RNG for rollouts
-    key, *subkeys = jax.random.split(ppo_state.rng_key, num_envs + 1)
-    subkeys = jnp.stack(subkeys)
-
-    # Determine action dim
-    key, subkey = jax.random.split(key)
-    dummy_act = env.action_space(env.default_params).sample(subkey)
-
-    pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, dummy_act.shape[0])
+    action_dim = env.action_space(env.default_params).n
+    pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, action_dim)
     val_net = ValueNET_GAT(gat1_out, gat2_out, gat2_nodes_out)
 
     # Vectorized rollout
-    def single_rollout(rng):
-        key_map, first_key_step = jax.random.split(rng)
-        new_param = EnvParams.create_random(env.nb_nodes, key_map, env.default_params.nb_validators,
-                                            env.default_params.rewards_weights)
-
+    @jax.jit
+    def single_rollout(rng: jax.Array, new_param: EnvParams):
         return rollout(
-            first_key_step,
+            rng,
             env,
             pol_net,
             val_net,
@@ -561,7 +557,20 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
         )
 
     vm_rollout = jax.vmap(single_rollout)
-    observations, acts, logps, rews, dones, vals, last_values = vm_rollout(subkeys)
+
+    params_map = jax.vmap(
+        lambda key_map: EnvParams.create_random(env.nb_nodes, key_map, env.default_params.nb_validators,
+                                                env.default_params.rewards_weights),
+    )
+
+    # Split RNG keys for rollouts and parameter sampling
+    rollout_key, params_key, perm_key, new_ppo_key = jax.random.split(ppo_state.rng_key, 4)
+
+    subkeys = jax.random.split(rollout_key, num_envs)
+    subkeys_params = jax.random.split(params_key, num_envs)
+
+    params_list = params_map(subkeys_params)
+    observations, acts, logps, rews, dones, vals, last_values = vm_rollout(subkeys, params_list)
 
     # Compute advantages and returns
     advantages = jax.vmap(
@@ -587,7 +596,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
     flat_graphs = jax.tree.map(flatten, observations)
 
     # Shuffle and minibatch updates
-    perm = jax.random.permutation(key, flat_a.shape[0])
+    perm = jax.random.permutation(perm_key, flat_a.shape[0])
     for start in range(0, perm.shape[0], batch_size):
         idx = perm[start: start + batch_size]
         batch_graphs = jax.tree.map(lambda x: x[idx], flat_graphs)
@@ -606,7 +615,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
         )
 
     # Update RNG and log progress
-    ppo_state = ppo_state.replace(rng_key=key)
+    ppo_state = ppo_state.replace(rng_key=new_ppo_key)
     return ppo_state, policy_loss, value_loss, entropy
 
 
@@ -675,9 +684,8 @@ def create_ppo_state(
     key = jax.random.PRNGKey(seed)
     graph_key, act_key, pol_key, val_key = jax.random.split(key, 4)
     dummy_graph = env.observation_space(env.default_params).sample(graph_key)
-    dummy_act = env.action_space(env.default_params).sample(act_key)
 
-    pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, dummy_act.shape[0])
+    pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, env.action_space(env.default_params).n)
     val_net = ValueNET_GAT(gat1_out, gat2_out, gat2_nodes_out)
 
     pol_vars = pol_net.init(pol_key, dummy_graph)

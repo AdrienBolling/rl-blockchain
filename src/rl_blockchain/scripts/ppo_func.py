@@ -9,7 +9,7 @@ import orbax.checkpoint as ocp
 import wandb
 from tqdm import tqdm
 
-from rl_blockchain.BlockEnv import BlockchainEnv
+from rl_blockchain.BlockEnv import BlockchainEnv, StaticEnvParams
 from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch
 from rl_blockchain.algo.ppo import eval_ppo as ev_ppo
@@ -72,13 +72,13 @@ def train_ppo(ARGS: Namespace):
     gamma = ARGS.gamma
     lambda_ = ARGS.lambda_
     clip_ratio = ARGS.clip_ratio
-    reward_weights = jnp.array(ARGS.reward_weights)
     key = jax.random.PRNGKey(ARGS.seed)
     key, key_param = jax.random.split(key)
     # Create environment parameters
 
     env_params = EnvParams.create_random(ARGS.n_nodes, key_param, ARGS.voting_nodes, ARGS.reward_weights)
-    env = BlockchainEnv(env_params, REF_FILENAME[ARGS.n_nodes])
+    static_params = StaticEnvParams.create(ARGS.n_nodes,REF_FILENAME[ARGS.n_nodes])
+    env = BlockchainEnv(env_params, static_params)
 
     # If we need to resume a training, get the name of the checkpoint
     chkpt_name = ARGS.checkpoint
