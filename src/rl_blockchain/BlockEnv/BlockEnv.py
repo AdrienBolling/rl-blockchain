@@ -190,7 +190,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
                                  )
 
         new_obs = self.get_obs(new_state, params)
-        mask = compute_legal_actions(new_obs)
+        mask = compute_legal_actions_state(state, params)
         is_illegal_action = jnp.logical_not(mask[action])
         done = jnp.logical_or(self.is_terminal(state, params), is_illegal_action)
 
@@ -201,11 +201,12 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
             lambda tup: weighted_rewards(tup[0], tup[1], tup[2]),
             operand_reward
         )
+        reward_multiplied = reward * (params.nb_validators + 1)  # Scale reward by number of validators
 
         return (
             jax.lax.stop_gradient(new_obs),
             jax.lax.stop_gradient(new_state),
-            jnp.array(reward),
+            jnp.array(reward_multiplied),
             done,
             {"action_taken": selected_node},
         )
@@ -243,11 +244,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         return obs, state
 
 
-@jax.jit
-def compute_legal_actions(obs: GraphsTuple) -> jnp.ndarray:
-    chosen_nodes = obs.nodes[:, 0]
-    nb_validators = obs.globals[0]
-
+def compute_legal_actions(chosen_nodes: jax.Array, nb_validators: int) -> jnp.ndarray:
     current_nb_val = jnp.sum(chosen_nodes)
     available = jnp.logical_not(chosen_nodes)
     nb_nodes = chosen_nodes.shape[0]
@@ -265,3 +262,17 @@ def compute_legal_actions(obs: GraphsTuple) -> jnp.ndarray:
         not_enough_validators,
         too_much_validators
     )
+
+
+@jax.jit
+def compute_legal_actions_state(state: EnvState, params: EnvParams) -> jnp.ndarray:
+    chosen_nodes = state.chosen_nodes
+    nb_validators = params.nb_validators
+    return compute_legal_actions(chosen_nodes, nb_validators)
+
+
+@jax.jit
+def compute_legal_actions_obs(obs: GraphsTuple) -> jnp.ndarray:
+    chosen_nodes = obs.nodes[:, 0]
+    nb_validators = obs.globals[0]
+    return compute_legal_actions(chosen_nodes, nb_validators)
