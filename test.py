@@ -27,8 +27,7 @@ def main():
     # Create environment params
 
 
-    adj_mat = create_rd_adj_matrix(25, subkey)
-    env_params = EnvParams.create(adj_mat, 7, [1, 1])
+    env_params = EnvParams.create_random(25, subkey, nb_validators=7, rewards_weights=[1, 1])
     static_params = StaticEnvParams.create(25, "ref_grid_min_max/grid_25.csv")
     env = BlockchainEnv(env_params, static_params)
     
@@ -50,7 +49,7 @@ def main():
     print("[EVAL] Running evaluation with default (random) policy...")
     # Since train_ppo does not return the trained state, this will evaluate the initial policy.
     # To evaluate the truly trained policy, modify train_ppo to return PPOState and pass that here.
-    eval_ppo_and_log(env, env_params, ppo_state, num_episodes=1, key=subkey)
+    eval_ppo_and_log(env, ppo_state, num_episodes=1, key=subkey)
     print("[EVAL] Evaluation completed.")
 
 

@@ -14,7 +14,7 @@ from gymnax.environments import environment
 from matplotlib.path import Path
 from tqdm import tqdm
 
-from rl_blockchain.BlockEnv import EnvParams, create_rd_adj_matrix
+from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions_obs, BlockchainEnv
 
 
@@ -380,12 +380,8 @@ def train_ppo(
     # rollout fns expect graph inputs inside rollout
     def single_rollout(rng):
         key_map, first_key_step = jax.random.split(rng)
-        new_adj_mat = create_rd_adj_matrix(env.nb_nodes, key_map)
-        new_param = EnvParams.create(
-            new_adj_mat,
-            default_params.nb_validators,
-            default_params.rewards_weights,
-        )
+        new_param = EnvParams.create_random(env.nb_nodes, key_map, default_params.nb_validators,
+                                            default_params.rewards_weights)
 
         return rollout(
             first_key_step,
@@ -460,16 +456,15 @@ def train_ppo(
     return ppo_state
 
 
-def eval_ppo_and_log(env: BlockchainEnv, env_params: EnvParams, ppo_state: PPOState, num_episodes: int = 10, key=None):
+def eval_ppo_and_log(env: BlockchainEnv, ppo_state: PPOState, num_episodes: int = 10, key=None):
     returns = []
+    env_params = env.default_params
     pol_net = PolicyNET_GAT(64, 64, 64,
                             env.action_space(env_params).n)
     for _ in range(num_episodes):
         key, subkey_mat, subkey_st = jax.random.split(key, 3)
-        adj_matrix = create_rd_adj_matrix(env.nb_nodes, subkey_mat)
-        temp_params = EnvParams.create(adj_matrix,
-                                       env_params.nb_validators,
-                                       env_params.rewards_weights)
+        temp_params = EnvParams.create_random(env.nb_nodes, subkey_mat, env_params.nb_validators,
+                                              env_params.rewards_weights)
         obs, st = env.reset(subkey_st, temp_params)
         done = False
         tot = 0.0
@@ -477,25 +472,15 @@ def eval_ppo_and_log(env: BlockchainEnv, env_params: EnvParams, ppo_state: PPOSt
             key, subkey = jax.random.split(key)
             dist = pol_net.apply(ppo_state.policy_params, obs)
             a = dist.mode()
-            obs, st, r, done, _ = env.step(subkey, st, a, env_params)
+            obs, st, r, done, _ = env.step(subkey, st, a, temp_params)
             tot += r
         returns.append(tot)
     avg = sum(returns) / len(returns)
     print(f"Eval over {num_episodes} eps: avg return={avg:.3f}")
 
 
-def eval_ppo(
-        ppo_state: PPOState,
-        env_fn: Callable[..., Any],
-        env_params: Dict[str, Any],
-        reward_weights: jnp.ndarray,
-        num_episodes: int = 10,
-        key: Optional[jnp.ndarray] = None,
-        gat_1_out: int = 64,
-        gat_2_out: int = 64,
-        gat_2_nodes_out: int = 64,
-):
-    env = env_fn(**env_params)
+def eval_ppo(ppo_state: PPOState, env: BlockchainEnv, num_episodes: int = 10, key: Optional[jnp.ndarray] = None,
+             gat_1_out: int = 64, gat_2_out: int = 64, gat_2_nodes_out: int = 64):
     metrics = {
         "returns": [],
         "lengths": [],
@@ -503,10 +488,14 @@ def eval_ppo(
         "infos": [],
     }
     key, subkey = jax.random.split(key)
+    env_params = env.default_params
     pol_net = PolicyNET_GAT(gat_1_out, gat_2_out, gat_2_nodes_out,
-                            env.sample_legal_action(env.reset(), key=subkey).shape[0])
+                            env.action_space(env_params).n)
     for _ in tqdm(range(num_episodes)):
-        st = env.reset()
+        key, subkey_mat, subkey_st = jax.random.split(key, 3)
+        temp_params = EnvParams.create_random(env.nb_nodes, subkey_mat, env_params.nb_validators,
+                                              env_params.rewards_weights)
+        obs, st = env.reset(subkey_st, temp_params)
         done = False
         total_reward = 0.0
         rewards = []
@@ -514,13 +503,12 @@ def eval_ppo(
         infos_ = []
 
         while not done:
-            graph = st.blockchain
             key, subkey = jax.random.split(key)
-            dist = pol_net.apply(ppo_state.policy_params, graph)
-            action = dist.mode()
-            st, reward, done, infos = env.step(st, action, reward_weights)
-            total_reward += reward
-            rewards.append(reward)
+            dist = pol_net.apply(ppo_state.policy_params, obs)
+            a = dist.mode()
+            obs, st, r, done, infos = env.step(subkey, st, a, temp_params)
+            total_reward += r
+            rewards.append(r)
             lengths += 1
             infos_.append(infos)
 
@@ -532,30 +520,15 @@ def eval_ppo(
     return metrics
 
 
-def train_epoch(
-        ppo_state: PPOState,
-        epoch: int,
-        env: environment.Environment,
-        env_params: EnvParams,
-        num_steps: int,
-        num_envs: int,
-        batch_size: int,
-        lr: float,
-        gamma: float,
-        lambda_: float,
-        clip_ratio: float,
-        reward_weights: jnp.ndarray,
-        gat1_out: int,
-        gat2_out: int,
-        gat2_nodes_out: int,
-        normalize_rewards: bool = False,
-) -> Tuple[PPOState, float, float]:
+def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: int, num_envs: int, batch_size: int,
+                lr: float, gamma: float, lambda_: float, clip_ratio: float, gat1_out: int, gat2_out: int,
+                gat2_nodes_out: int, normalize_rewards: bool = False) -> Tuple[PPOState, float, float, float]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
     """
 
-    # TODO
+    # TODO normalization of rewards
     # if normalize_rewards:
     #    # If using normalization, ensure the environment is wrapped accordingly
     #    env = NormalizationWrapper(env)
@@ -565,7 +538,6 @@ def train_epoch(
     subkeys = jnp.stack(subkeys)
 
     # Determine action dim
-    init_state = env.reset()
     key, subkey = jax.random.split(key)
     dummy_act = env.action_space(env.default_params).sample(subkey)
 
@@ -574,27 +546,34 @@ def train_epoch(
 
     # Vectorized rollout
     def single_rollout(rng):
+        key_map, first_key_step = jax.random.split(rng)
+        new_param = EnvParams.create_random(env.nb_nodes, key_map, env.default_params.nb_validators,
+                                            env.default_params.rewards_weights)
+
         return rollout(
-            rng,
+            first_key_step,
             env,
-            lambda g: pol_net.apply(ppo_state.policy_params, g),
-            lambda g: val_net.apply(ppo_state.value_params, g),
-            env.reset(),
+            pol_net,
+            val_net,
+            ppo_state,
+            new_param,
             num_steps,
-            reward_weights,
         )
 
     vm_rollout = jax.vmap(single_rollout)
-    states, acts, logps, rews, dones, vals, last_states = vm_rollout(subkeys)
+    observations, acts, logps, rews, dones, vals, last_values = vm_rollout(subkeys)
 
     # Compute advantages and returns
     advantages = jax.vmap(
-        lambda r, v, d, st: compute_gae(
-            r, v, d,
-            val_net.apply(ppo_state.value_params, st.blockchain),
-            gamma, lambda_
+        lambda r, v, d, last_value: compute_gae(
+            r,
+            v,
+            d,
+            last_value,
+            gamma,
+            lambda_,
         )
-    )(rews, vals, dones, last_states)
+    )(rews, vals, dones, last_values)
     returns = advantages + vals
 
     # Flatten data
@@ -605,7 +584,7 @@ def train_epoch(
     flat_lp = flatten(logps)
     flat_r = flatten(returns)
     flat_adv = flatten(advantages)
-    flat_graphs = jax.tree.map(lambda x: flatten(x), states.blockchain)
+    flat_graphs = jax.tree.map(flatten, observations)
 
     # Shuffle and minibatch updates
     perm = jax.random.permutation(key, flat_a.shape[0])
@@ -628,7 +607,7 @@ def train_epoch(
 
     # Update RNG and log progress
     ppo_state = ppo_state.replace(rng_key=key)
-    return ppo_state, policy_loss, value_loss
+    return ppo_state, policy_loss, value_loss, entropy
 
 
 def create_checkpoint_manager(

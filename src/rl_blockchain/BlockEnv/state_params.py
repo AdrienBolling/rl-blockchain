@@ -7,7 +7,7 @@ import jraph
 from flax import struct
 from gymnax.environments import environment
 
-from rl_blockchain.BlockEnv.BlockchainGraph import create_jraph_from_adj_matrix
+from rl_blockchain.BlockEnv.BlockchainGraph import create_jraph_from_adj_matrix, create_rd_adj_matrix
 
 node_features_dict = {
     "node_id": 0,
@@ -139,12 +139,29 @@ class EnvParams(environment.EnvParams):
             network_graph=create_jraph_from_adj_matrix(adj_network_graph),
             adj_matrix=adj_network_graph,
             nb_validators=nb_validators,
-            # nb_nodes=nb_nodes,
             rewards_weights=rewards_weights_jnp / rewards_weights_jnp.sum(),
             max_steps_in_episode=2000,
-            # distance_opt_array=min_max_array,
-            # avg_distance=avg_distance.item(),
         )
+
+    @classmethod
+    def create_random(cls, nb_nodes: int, key: jax.Array, nb_validators: int = None,
+                      rewards_weights: list | jax.Array = None, ) -> 'EnvParams':
+        """
+        Create randomized environment parameters.
+        Args:
+            nb_nodes (int): Number of nodes in the environment.
+            key (jax.Array): JAX random key for reproducibility.
+            nb_validators (int, optional): Number of validators. If None, a random number is generated.
+            rewards_weights (list or jax.Array, optional): Weights for the rewards. If None, random weights are generated.
+        """
+        key_mat, key_nb_val, key_rew_weights = jax.random.split(key, 3)
+        adj_mat = create_rd_adj_matrix(nb_nodes, key_mat)
+        if nb_validators is None:
+            val_sample = jax.random.normal(key_nb_val) * (0.25 * nb_nodes) + (nb_nodes // 2)
+            nb_validators = jnp.clip(jnp.round(val_sample), 4, nb_nodes).astype(int)
+        if rewards_weights is None:
+            rewards_weights = jax.random.uniform(key_rew_weights, shape=(2,), minval=0.0, maxval=1.0)
+        return cls.create(adj_mat, nb_validators, rewards_weights)
 
 
 @jax.jit

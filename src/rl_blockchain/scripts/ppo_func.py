@@ -10,10 +10,9 @@ import wandb
 from tqdm import tqdm
 
 from rl_blockchain.BlockEnv import BlockchainEnv
-from rl_blockchain.BlockEnv import EnvParams, create_rd_adj_matrix
+from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch
 from rl_blockchain.algo.ppo import eval_ppo as ev_ppo
-from rl_blockchain.rl.env import BlockchainEnv_intermediary
 from rl_blockchain.scripts.parser import REF_FILENAME
 
 logger = logging.getLogger(__name__)
@@ -78,9 +77,7 @@ def train_ppo(ARGS: Namespace):
     key, key_param = jax.random.split(key)
     # Create environment parameters
 
-
-    adj_mat = create_rd_adj_matrix(ARGS.n_nodes, key_param)
-    env_params = EnvParams.create(adj_mat, ARGS.voting_nodes, [1, 1])
+    env_params = EnvParams.create_random(ARGS.n_nodes, key_param, ARGS.voting_nodes, ARGS.reward_weights)
     env = BlockchainEnv(env_params, REF_FILENAME[ARGS.n_nodes])
 
     # If we need to resume a training, get the name of the checkpoint
@@ -115,10 +112,6 @@ def train_ppo(ARGS: Namespace):
         save_interval_steps=1,
     )
 
-    first_params = env.default_params
-
-
-
     gat1_out, gat2_out, gat2_nodes_out = ARGS.gat_arch
 
     # Create the PPO state
@@ -137,31 +130,18 @@ def train_ppo(ARGS: Namespace):
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
         # Train for one epoch
-        ppo_state, policy_loss, value_loss = train_epoch(
-            ppo_state=ppo_state,
-            epoch=epoch,
-            env=env,
-            env_params=env_params,
-            num_steps=num_steps,
-            num_envs=num_envs,
-            batch_size=batch_size,
-            lr=lr,
-            gamma=gamma,
-            lambda_=lambda_,
-            clip_ratio=clip_ratio,
-            reward_weights=reward_weights,
-            gat1_out=gat1_out,
-            gat2_out=gat2_out,
-            gat2_nodes_out=gat2_nodes_out,
-        )
+        ppo_state, policy_loss, value_loss, entropy = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env,
+                                                                  num_steps=num_steps, num_envs=num_envs,
+                                                                  batch_size=batch_size, lr=lr, gamma=gamma,
+                                                                  lambda_=lambda_, clip_ratio=clip_ratio,
+                                                                  gat1_out=gat1_out, gat2_out=gat2_out,
+                                                                  gat2_nodes_out=gat2_nodes_out)
         key, subkey = jax.random.split(key)
         if epoch % ARGS.eval_interval == 0:
             # Evaluate the PPO agent
             metrics = ev_ppo(
                 ppo_state=ppo_state,
-                env_fn=env_fn,
-                env_params=env_params,
-                reward_weights=reward_weights,
+                env=env,
                 num_episodes=ARGS.eval_episodes,
                 key=subkey,
                 gat_1_out=gat1_out,
@@ -174,6 +154,7 @@ def train_ppo(ARGS: Namespace):
                     "epoch": epoch,
                     "policy_loss": policy_loss,
                     "value_loss": value_loss,
+                    "entropy": entropy,
                 },
                 "eval": metrics,
             }
@@ -185,6 +166,7 @@ def train_ppo(ARGS: Namespace):
                     "epoch": epoch,
                     "policy_loss": policy_loss,
                     "value_loss": value_loss,
+                    "entropy": entropy,
                 }
             }
             log_to_wandb(logs, mode="train")
