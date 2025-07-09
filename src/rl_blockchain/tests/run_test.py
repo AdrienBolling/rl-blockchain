@@ -11,6 +11,9 @@ def main():
         if args.target == "env":
             from rl_blockchain.tests.profiling import env_profiling
             env_profiling(args)
+        elif args.target == "blockEnv":
+            from rl_blockchain.tests.profiling_blockEnv import env_profiling
+            env_profiling(args)
             
 if __name__ == "__main__":
     main()

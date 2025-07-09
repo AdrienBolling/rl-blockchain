@@ -77,7 +77,7 @@ def train_ppo(ARGS: Namespace):
     # Create environment parameters
 
     env_params = EnvParams.create_random(ARGS.n_nodes, key_param, ARGS.voting_nodes, ARGS.reward_weights)
-    static_params = StaticEnvParams.create(ARGS.n_nodes,REF_FILENAME[ARGS.n_nodes])
+    static_params = StaticEnvParams.create(ARGS.n_nodes, REF_FILENAME[ARGS.n_nodes])
     env = BlockchainEnv(env_params, static_params)
 
     # If we need to resume a training, get the name of the checkpoint

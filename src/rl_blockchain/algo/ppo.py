@@ -187,7 +187,7 @@ def rollout(key_input, env: environment.Environment,
     def policy_step(state_input, tmp):
         """lax.scan compatible step transition in jax env."""
         obs, state, key = state_input
-        key, key_step, key_net = jax.random.split(key, 3)
+        next_key, key_step, key_net = jax.random.split(key, 3)
         action_distribution = pol_model.apply(ppo_state.policy_params, obs)
         action = action_distribution.sample(seed=key_net)
         logp = action_distribution.log_prob(action)
@@ -197,7 +197,7 @@ def rollout(key_input, env: environment.Environment,
             key_step, state, action, env_params
         )
 
-        carry = [next_obs, next_state, key]
+        carry = [next_obs, next_state, next_key]
         traj = (next_obs, action, logp, reward, done, value)
         return carry, traj
 

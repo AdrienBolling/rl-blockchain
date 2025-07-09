@@ -15,14 +15,14 @@ def parse_args():
     parser.add_argument(
         "--n-nodes",
         type=int,
-        default=500,
-        help="Number of nodes in the environment. Default is 20.",
+        default=25,
+        help="Number of nodes in the environment. Default is 25.",
     )
     parser.add_argument(
         "--voting-nodes",
         type=int,
-        default=20,
-        help="Number of voting nodes in the environment. Default is 5.",
+        default=8,
+        help="Number of voting nodes in the environment. Default is 8.",
     )
     parser.add_argument(
         "--seed",
@@ -51,7 +51,7 @@ def parse_args():
         "--n-steps",
         type=int,
         default=100000,
-        help="Number of steps to run for profiling. Default is 1000.",
+        help="Number of steps to run for profiling. Default is 100000.",
     )
     profiling_parser.add_argument(
         "--n-envs",
@@ -68,4 +68,10 @@ def parse_args():
         "env",
         help="Profile the environment only (no training just steps through the env with random legal actions).",
     )
+    # Target: blockEnv
+    blockEnv_parser = target_subparsers.add_parser(
+        "blockEnv",
+        help="Profile the BlockEnv environment (no training just steps through the env with random legal actions).",
+    )
+
     return parser.parse_args()

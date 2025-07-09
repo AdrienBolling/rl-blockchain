@@ -243,6 +243,24 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         obs = self.get_obs(state, params)
         return obs, state
 
+    @partial(jax.jit, static_argnames=('self',))
+    def sample_legal_action(self, state: EnvState, params:EnvParams, key: jax.Array) -> jax.Array:
+        """
+        Sample a legal action in the environment.
+
+        Params:
+            state: The current state of the environment.
+            key: JAX random key for reproducibility.
+
+        Returns:
+            A legal action.
+        """
+        legal_mask = compute_legal_actions_state(state, params)  # shape (A,)
+        legal_probs = legal_mask.astype(jnp.float32)
+        legal_probs = legal_probs / jnp.sum(legal_probs)  # normalisation
+
+        return jax.random.choice(key, a=legal_mask.shape[0], p=legal_probs)
+
 
 def compute_legal_actions(chosen_nodes: jax.Array, nb_validators: int) -> jnp.ndarray:
     current_nb_val = jnp.sum(chosen_nodes)

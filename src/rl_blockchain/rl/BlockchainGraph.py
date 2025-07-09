@@ -84,20 +84,12 @@ def create_blockchain_graph(
     # Create edges
     senders, receivers = create_pairwise_arrays(node_distance_matrix.shape[0])
 
-    # Remove self-loops
-    mask = senders != receivers
-    senders = senders[mask]
-    receivers = receivers[mask]
-
-    # Create edges features
+    # Cr    eate edges features
     edge_features = jnp.expand_dims(node_distance_matrix.flatten(), axis=1)
-    edge_features = edge_features[mask]  # Remove self-loops from edge features
-
-    # maybe remove here
 
     # Save informations
     n_nodes = node_distance_matrix.shape[0]
-    n_edges = n_nodes * (n_nodes - 1)
+    n_edges = n_nodes ** 2
 
     # Global features
     global_features = jnp.zeros((1, 1))
