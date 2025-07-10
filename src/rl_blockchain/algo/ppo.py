@@ -1,6 +1,6 @@
 import os
 from functools import partial
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple, Union, Any
 
 import distrax
 import flax.linen as nn
@@ -193,12 +193,12 @@ def rollout(key_input, env: environment.Environment,
         logp = action_distribution.log_prob(action)
         value = val_model.apply(ppo_state.value_params, obs)
 
-        next_obs, next_state, reward, done, _ = env.step(
+        next_obs, next_state, reward, done, infos = env.step(
             key_step, state, action, env_params
         )
 
         carry = [next_obs, next_state, next_key]
-        traj = (next_obs, action, logp, reward, done, value)
+        traj = (next_obs, action, logp, reward, done, value, infos)
         return carry, traj
 
     # Scan over episode step loop
@@ -211,8 +211,8 @@ def rollout(key_input, env: environment.Environment,
 
     last_value = val_model.apply(ppo_state.value_params, obs_end)
     # Return masked sum of rewards accumulated by agent in episode
-    observations, actions, logps, rewards, dones, values = trajs
-    return observations, actions, logps, rewards, dones, values, last_value
+    observations, actions, logps, rewards, dones, values, infos = trajs
+    return observations, actions, logps, rewards, dones, values, last_value, infos
 
 
 @jax.jit
@@ -249,7 +249,7 @@ def update_ppo(
         clip_ratio: float = 0.2,
         value_coef: float = 0.5,
         entropy_coef: float = 0.01
-) -> tuple[PPOState, float, float, float]:
+) -> tuple[PPOState, float, float, float, dict[str, Any]]:
     """
     Performs a PPO update over a batch of transitions.
 
@@ -273,6 +273,13 @@ def update_ppo(
         mean_policy_loss: Scalar
         mean_value_loss: Scalar
     """
+
+    info_coef = {
+        "clip_ratio": clip_ratio,
+        "value_coef": value_coef,
+        "entropy_coef": entropy_coef,
+    }
+
 
     # Loss function with aux outputs
     def loss_fn(policy_params, value_params):
@@ -342,7 +349,15 @@ def update_ppo(
         value_opt_state=new_val_opt_state,
     )
 
-    return new_state, mean_pl, mean_vl, mean_ent
+    return new_state, mean_pl, mean_vl, mean_ent, info_coef
+
+
+def compute_avg_value(infos: dict[str, jax.Array]) -> dict[str, jax.Array]:
+    list_is_inner: jax.Array = infos["action_taken"] == -1
+    sum_inner = list_is_inner.sum()
+    avg_gini = (infos["gini"] * list_is_inner).sum() / sum_inner
+    avg_distance = (infos["distance"] * list_is_inner).sum() / sum_inner
+    return {"avg_gini": avg_gini, "avg_distance": avg_distance}
 
 
 def train_ppo(
@@ -398,13 +413,14 @@ def train_ppo(
     )
 
     for epoch in range(num_epochs):
-        new_ppo_key, rollout_key, params_key = jax.random.split(ppo_state.rng_key, 3)
+        new_ppo_key, rollout_key, params_key, permutation_key = jax.random.split(ppo_state.rng_key, 4)
         subkeys = jax.random.split(rollout_key, num_envs)
         subkeys_params = jax.random.split(params_key, num_envs)
 
         params_list = params_map(subkeys_params)
 
-        observations, acts, logps, rews, dones, vals, last_values = vm_rollout(subkeys, params_list)
+        observations, acts, logps, rews, dones, vals, last_values, infos = vm_rollout(subkeys, params_list)
+        refined_value = compute_avg_value(infos)
 
         # Extract graphs and last graphs
         # GAE over each env
@@ -434,7 +450,7 @@ def train_ppo(
         flat_graphs = jax.tree.map(flatten, observations)
 
         # Permute to get randomized minibatches
-        idx = jax.random.permutation(key, flat_a.shape[0])
+        idx = jax.random.permutation(permutation_key, flat_a.shape[0])
         for start in range(0, idx.shape[0], batch_size):
             batch_idx = idx[start: start + batch_size]
 
@@ -442,7 +458,7 @@ def train_ppo(
             batch_graphs = jax.tree.map(lambda x: x[batch_idx], flat_graphs)
 
             # Now call update_ppo with the exact signature you defined:
-            ppo_state, policy_loss, value_loss, entropy = update_ppo(
+            ppo_state, policy_loss, value_loss, entropy, info_coef = update_ppo(
                 ppo_state,
                 batch_graphs,  # env_states: a GraphsTuple PyTree
                 flat_a[batch_idx],  # actions
@@ -458,6 +474,10 @@ def train_ppo(
         ppo_state = ppo_state.replace(rng_key=new_ppo_key)
         print(f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}, Entropy={entropy:.3f}")
         print(f"rewards : {rews.sum():.3f}, longueur {rews.shape}, dones {dones.sum():.3f}")
+        string_builder = ""
+        for key, value in refined_value.items():
+            string_builder += f"{key}: {value:.3f}, "
+        print("Infos Value -> ", string_builder)
 
     return ppo_state
 
@@ -528,7 +548,8 @@ def eval_ppo(ppo_state: PPOState, env: BlockchainEnv, num_episodes: int = 10, ke
 
 def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: int, num_envs: int, batch_size: int,
                 lr: float, gamma: float, lambda_: float, clip_ratio: float, gat1_out: int, gat2_out: int,
-                gat2_nodes_out: int, normalize_rewards: bool = False) -> Tuple[PPOState, float, float, float]:
+                gat2_nodes_out: int, normalize_rewards: bool = False) -> Tuple[
+    PPOState, float, float, float, dict[str, dict[str, Any]]]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
@@ -570,7 +591,8 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
     subkeys_params = jax.random.split(params_key, num_envs)
 
     params_list = params_map(subkeys_params)
-    observations, acts, logps, rews, dones, vals, last_values = vm_rollout(subkeys, params_list)
+    observations, acts, logps, rews, dones, vals, last_values, infos_env = vm_rollout(subkeys, params_list)
+    infos_env_refined = compute_avg_value(infos_env)
 
     # Compute advantages and returns
     advantages = jax.vmap(
@@ -595,12 +617,14 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
     flat_adv = flatten(advantages)
     flat_graphs = jax.tree.map(flatten, observations)
 
+    policy_loss, value_loss, entropy, info_coef = 0.0, 0.0, 0.0, {}
+
     # Shuffle and minibatch updates
     perm = jax.random.permutation(perm_key, flat_a.shape[0])
     for start in range(0, perm.shape[0], batch_size):
         idx = perm[start: start + batch_size]
         batch_graphs = jax.tree.map(lambda x: x[idx], flat_graphs)
-        ppo_state, policy_loss, value_loss, entropy = update_ppo(
+        ppo_state, policy_loss, value_loss, entropy, info_coef = update_ppo(
             ppo_state,
             batch_graphs,
             flat_a[idx],
@@ -616,7 +640,19 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
 
     # Update RNG and log progress
     ppo_state = ppo_state.replace(rng_key=new_ppo_key)
-    return ppo_state, policy_loss, value_loss, entropy
+
+    info_train = {
+        "policy_loss": policy_loss,
+        "value_loss": value_loss,
+        "entropy": entropy,
+    }
+    infos = {
+        "env": infos_env_refined,
+        "coef": info_coef,
+        "train": info_train,
+    }
+
+    return ppo_state, policy_loss, value_loss, entropy, infos
 
 
 def create_checkpoint_manager(

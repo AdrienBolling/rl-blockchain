@@ -12,8 +12,11 @@ profiling_results
 # test files
 test.py
 tests.ipynb
-
+*.ipynb
+debug*.log
 
 # Cache files
 __pycache__
 *.pyc
+
+wandb/

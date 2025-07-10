@@ -3,7 +3,6 @@ import re
 from argparse import Namespace
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 import orbax.checkpoint as ocp
 import wandb
@@ -18,39 +17,16 @@ from rl_blockchain.scripts.parser import REF_FILENAME
 logger = logging.getLogger(__name__)
 
 
-def make_env_params(key, n_nodes, voting_nodes):
-    # Create a random symmetric distance matrix
-    A = jax.random.uniform(key, (n_nodes, n_nodes))
-    dist = jnp.fill_diagonal((A + A.T) * 0.5, 0, inplace=False)
-    # Create environment parameters
-    env_params = {
-        "node_distance_matrix": dist,
-        "voting_nodes": voting_nodes,
-        "random_key": key,
-    }
-    return env_params
-
-
-def log_to_wandb(logs: dict, mode: str = "train"):
-    # Wandb is already initialized in the main script, so we just need to log the arguments
-    if "mode" == "train+eval":
-        aggregated_eval_metrics = {}
-        avg_return = np.asarray(logs["eval"]["return"]).mean()
-        avg_length = np.asarray(logs["eval"]["length"]).mean()
-        individual_rewards = np.asarray(logs["eval"]["infos"]["rewards"]).mean(axis=0)
-        aggregated_eval_metrics["avg_return"] = avg_return
-        aggregated_eval_metrics["avg_length"] = avg_length
-        for i, rew in enumerate(logs["eval"]["infos"]["rewards"]):
-            aggregated_eval_metrics[f"reward_{i}"] = individual_rewards[i]
-
-
-    elif mode == "train":
-        # If we are in training mode, we log the training metrics
-        aggregated_eval_metrics = {
-        }
-
-    logs["eval"] = aggregated_eval_metrics
-    wandb.log(logs, step=logs["train"]["epoch"])
+def aggregate_eval_metrics(logs_eval: dict) -> dict:
+    aggregated_eval_metrics = {}
+    avg_return = np.asarray(logs_eval["returns"]).mean()
+    avg_length = np.asarray(logs_eval["lengths"]).mean()
+    individual_rewards = np.asarray(logs_eval["infos"]["rewards"]).mean(axis=0)
+    aggregated_eval_metrics["avg_return"] = avg_return
+    aggregated_eval_metrics["avg_length"] = avg_length
+    for i, rew in enumerate(logs_eval["infos"]["rewards"]):
+        aggregated_eval_metrics[f"reward_{i}"] = individual_rewards[i]
+    return aggregated_eval_metrics
 
 
 def train_ppo(ARGS: Namespace):
@@ -126,17 +102,20 @@ def train_ppo(ARGS: Namespace):
         gat2_out=gat2_out,
         gat2_nodes_out=gat2_nodes_out,
     )
+    print("-> ",num_epochs)
 
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
         # Train for one epoch
-        ppo_state, policy_loss, value_loss, entropy = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env,
-                                                                  num_steps=num_steps, num_envs=num_envs,
-                                                                  batch_size=batch_size, lr=lr, gamma=gamma,
-                                                                  lambda_=lambda_, clip_ratio=clip_ratio,
-                                                                  gat1_out=gat1_out, gat2_out=gat2_out,
-                                                                  gat2_nodes_out=gat2_nodes_out)
+        ppo_state, policy_loss, value_loss, entropy, infos = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env,
+                                                                         num_steps=num_steps, num_envs=num_envs,
+                                                                         batch_size=batch_size, lr=lr, gamma=gamma,
+                                                                         lambda_=lambda_, clip_ratio=clip_ratio,
+                                                                         gat1_out=gat1_out, gat2_out=gat2_out,
+                                                                         gat2_nodes_out=gat2_nodes_out)
         key, subkey = jax.random.split(key)
+        logs = infos.copy()
+        logs["epoch"] = epoch
         if epoch % ARGS.eval_interval == 0:
             # Evaluate the PPO agent
             metrics = ev_ppo(
@@ -149,31 +128,14 @@ def train_ppo(ARGS: Namespace):
                 gat_2_nodes_out=gat2_nodes_out,
             )
 
-            logs = {
-                "train": {
-                    "epoch": epoch,
-                    "policy_loss": policy_loss,
-                    "value_loss": value_loss,
-                    "entropy": entropy,
-                },
-                "eval": metrics,
-            }
+            logs["eval"] = aggregate_eval_metrics(metrics)
 
-            log_to_wandb(logs, mode="train+eval")
-        else:
-            logs = {
-                "train": {
-                    "epoch": epoch,
-                    "policy_loss": policy_loss,
-                    "value_loss": value_loss,
-                    "entropy": entropy,
-                }
-            }
-            log_to_wandb(logs, mode="train")
+        wandb.log(logs, step=epoch)
 
         # Save the checkpoint
         checkpoint_manager.save(step=epoch, args=ocp.args.StandardSave(ppo_state))
         logger.info(f"Epoch {epoch} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
+    wandb.finish()
 
 
 def eval_ppo():

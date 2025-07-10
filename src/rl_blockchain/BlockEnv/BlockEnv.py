@@ -9,17 +9,17 @@ from jraph import GraphsTuple
 
 from rl_blockchain.BlockEnv.BlockchainGraph import create_jraph_from_adj_matrix_fast, STATIC_MASKS_DICT, \
     create_rd_adj_matrix
-from rl_blockchain.BlockEnv.rewards import weighted_rewards
+from rl_blockchain.BlockEnv.rewards import weighted_rewards, null_reward
 from rl_blockchain.BlockEnv.state_params import EnvState, EnvParams, get_stake_distribution, \
     preprocessing_validator_distribution, StaticEnvParams
 
 
-def action_to_selected_node(action: int) -> int:
-    return action - 1
+def action_to_selected_node(action: int | jax.Array) -> jax.Array:
+    return jnp.array(action - 1, dtype=jnp.int32)
 
 
-def selected_node_to_action(selected_node: int) -> int:
-    return selected_node - 1
+def selected_node_to_action(selected_node: int | jax.Array) -> jax.Array:
+    return jnp.array(selected_node + 1, dtype=jnp.int32)
 
 
 @partial(jax.jit, static_argnames=('nb_nodes',))
@@ -98,24 +98,10 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
     """
 
     def __init__(self, default_first_params: EnvParams, static_params: StaticEnvParams):
-        # def __init__(self, network_graph: jnp.ndarray, nb_validators: int = None, max_edge_weights: float = None,
-        #              filename: str = "grid_samples/grid_25.csv", weight_reward=None):
         super().__init__()
 
         self._first_params = default_first_params
         self._static_params = static_params
-
-        # if weight_reward is None:
-        #     weight_reward = [1, 1]
-        # self.first_reward = weight_reward
-        # self.first_network_adj_mat = network_graph
-        #                                                                                      network_graph.max().item())
-        # self.filename_min_max_dist = filename
-        # self.nb_node = network_graph.shape[0]
-
-        # if nb_validators is None:
-        #     nb_validators = self.nb_node // 3
-        # self._first_nb_validators = nb_validators
 
     @property
     def nb_nodes(self) -> int:
@@ -194,21 +180,23 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         is_illegal_action = jnp.logical_not(mask[action])
         done = jnp.logical_or(self.is_terminal(state, params), is_illegal_action)
 
-        operand_reward = (new_state, params, self._static_params)
-        reward = jax.lax.cond(
+        operand_reward = (state,new_state, params, self._static_params)
+        reward, info = jax.lax.cond(
             jnp.logical_or(is_illegal_action, is_inner),
-            lambda tup: jnp.array(0.0, dtype=jnp.float32),
-            lambda tup: weighted_rewards(tup[0], tup[1], tup[2]),
+            lambda tup: null_reward(),
+            lambda tup: weighted_rewards(tup[0], tup[1], tup[2], tup[3]),
             operand_reward
         )
         reward_multiplied = reward * (params.nb_validators + 1)  # Scale reward by number of validators
+
+        infos_2 = dict(**info, action_taken=selected_node)
 
         return (
             jax.lax.stop_gradient(new_obs),
             jax.lax.stop_gradient(new_state),
             jnp.array(reward_multiplied),
             done,
-            {"action_taken": selected_node},
+            infos_2,
         )
 
     @partial(jax.jit, static_argnames=("self",))
@@ -244,7 +232,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         return obs, state
 
     @partial(jax.jit, static_argnames=('self',))
-    def sample_legal_action(self, state: EnvState, params:EnvParams, key: jax.Array) -> jax.Array:
+    def sample_legal_action(self, state: EnvState, params: EnvParams, key: jax.Array) -> jax.Array:
         """
         Sample a legal action in the environment.
 

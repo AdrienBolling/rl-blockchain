@@ -8,10 +8,10 @@ def main():
     args = _parse_args()
 
     # Init the logging
-    setup_logging(args)
+    run = setup_wandb(args)
+    setup_logging(args, run)
     logger = logging.getLogger(__name__)
     # Setup Weights & Biases (wandb) logging
-    setup_wandb(args)
 
     # Check the mode and call the appropriate function
     if args.algo == "ppo":

@@ -3,28 +3,12 @@ from argparse import Namespace
 
 import wandb
 
-def setup_logging(args
-) -> None:
-
-    """
-    Set up logging configuration.
-
-    Args:
-        level (int): Logging level (e.g., logging.DEBUG, logging.INFO).
-        format (str): Format of the log messages.
-        datefmt (str): Date format for the log messages.
-        filename (str): Name of the file to log to. If None, logs to console.
-        filemode (str): File mode for logging ('a' for append, 'w' for overwrite).
-        stream (bool): If True, logs to console as well.
-
-    Returns:
-        None
-    """
-
+def setup_logging(args:Namespace, run : "wandb.Run") -> None:
     level = args.logging_level
     format = args.logging_format
     datefmt = args.logging_datefmt
-    filename = args.logging_filename
+    log_dir = args.log_dir
+    filename = f"{log_dir}/run_{run.id}.log" if run else None
     filemode = args.logging_filemode
     stream = args.logging_stream
 
@@ -44,7 +28,7 @@ def setup_logging(args
         logging.getLogger().addHandler(console_handler)
     logging.getLogger().setLevel(level)
 
-def setup_wandb(ARGS: Namespace):
+def setup_wandb(ARGS: Namespace)-> wandb.run:
     """
     Set up Weights & Biases (wandb) logging.
 
@@ -72,13 +56,13 @@ def setup_wandb(ARGS: Namespace):
                 chkpt_name = "run_0"
 
         # Resume the run
-        wandb.init(
+        run = wandb.init(
             project=ARGS.wandb_project,
             entity=ARGS.wandb_entity,
             id=chkpt_name,
             resume="must",
             config=ARGS,
-            job_type=ARGS.mode,
+            # job_type=ARGS.mode,
             group=ARGS.algo,
             tags=ARGS.wandb_tags,
         )
@@ -94,13 +78,14 @@ def setup_wandb(ARGS: Namespace):
         except ValueError:
             # When the project does not exist yet, assume no runs
             new_run_id = "run_0"
-        wandb.init(
+        run = wandb.init(
             project=ARGS.wandb_project,
             entity=ARGS.wandb_entity,
             name=f"{new_run_id}",
             id=new_run_id,
             config=ARGS,
-            job_type=ARGS.mode,
+            # job_type=ARGS.mode,
             group=ARGS.algo,
             tags=ARGS.wandb_tags,
         )
+    return run
