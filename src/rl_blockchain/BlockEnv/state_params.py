@@ -123,7 +123,7 @@ class EnvParams(environment.EnvParams):
     rew_sigma: float = 0.2
     max_time_steps: float = 10000
 
-    max_steps_in_episode = 2000  # TODO Set it to -1
+    max_steps_in_episode = 1000  # TODO Set it to -1
 
     @classmethod
     def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int,
@@ -140,7 +140,7 @@ class EnvParams(environment.EnvParams):
             adj_matrix=adj_network_graph,
             nb_validators=nb_validators,
             rewards_weights=rewards_weights_jnp / rewards_weights_jnp.sum(),
-            max_steps_in_episode=2000,
+            max_steps_in_episode=1000,
         )
 
     @classmethod

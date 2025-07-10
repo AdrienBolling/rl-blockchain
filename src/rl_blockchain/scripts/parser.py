@@ -123,14 +123,14 @@ def _parse_args() -> Namespace:
     train_parser.add_argument(
         "--num-steps",
         type=int,
-        default=1000,
+        default=100000,
         help="Number of steps per epoch. Default is 4000.",
     )
     train_parser.add_argument(
         "--num-envs",
         type=int,
-        default=1,
-        help="Number of parallel environments. Default is 1.",
+        default=5,
+        help="Number of parallel environments. Default is 5.",
     )
     train_parser.add_argument(
         "--batch-size",

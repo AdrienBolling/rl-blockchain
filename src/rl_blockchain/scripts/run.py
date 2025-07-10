@@ -9,7 +9,11 @@ def main():
 
     # Init the logging
     run = setup_wandb(args)
-    setup_logging(args, run)
+    logfile = setup_logging(args, run)
+
+    logging.info("Logging démarré")
+    logging.debug(f"Fichier log actif : {logfile}")
+    
     logger = logging.getLogger(__name__)
     # Setup Weights & Biases (wandb) logging
 

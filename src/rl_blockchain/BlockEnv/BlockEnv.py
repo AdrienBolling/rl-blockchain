@@ -159,7 +159,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         return obs_graph
 
     def is_terminal(self, state: EnvState, params: EnvParams) -> jax.Array:
-        done_steps = state.time >= params.max_steps_in_episode
+        done_steps = state.global_step >= params.max_steps_in_episode
         return jnp.array(done_steps)
 
     def step_env(self, key: jax.Array, state: EnvState, action: int | float | jax.Array, params: EnvParams) -> tuple[

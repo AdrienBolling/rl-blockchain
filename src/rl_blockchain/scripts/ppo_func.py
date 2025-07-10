@@ -52,6 +52,8 @@ def train_ppo(ARGS: Namespace):
     key, key_param = jax.random.split(key)
     # Create environment parameters
 
+    sub_epoch = 0
+
     env_params = EnvParams.create_random(ARGS.n_nodes, key_param, ARGS.voting_nodes, ARGS.reward_weights)
     static_params = StaticEnvParams.create(ARGS.n_nodes, REF_FILENAME[ARGS.n_nodes])
     env = BlockchainEnv(env_params, static_params)
@@ -102,20 +104,16 @@ def train_ppo(ARGS: Namespace):
         gat2_out=gat2_out,
         gat2_nodes_out=gat2_nodes_out,
     )
-    print("-> ",num_epochs)
 
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
         # Train for one epoch
-        ppo_state, policy_loss, value_loss, entropy, infos = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env,
-                                                                         num_steps=num_steps, num_envs=num_envs,
-                                                                         batch_size=batch_size, lr=lr, gamma=gamma,
-                                                                         lambda_=lambda_, clip_ratio=clip_ratio,
-                                                                         gat1_out=gat1_out, gat2_out=gat2_out,
-                                                                         gat2_nodes_out=gat2_nodes_out)
+        logger.info(f"Epoch {epoch + 1}/{num_epochs}")
+        ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env, num_steps=num_steps,
+                                           num_envs=num_envs, batch_size=batch_size, lr=lr, gamma=gamma,
+                                           lambda_=lambda_, clip_ratio=clip_ratio, gat1_out=gat1_out, gat2_out=gat2_out,
+                                           gat2_nodes_out=gat2_nodes_out, sub_epoch=sub_epoch, to_log=True)
         key, subkey = jax.random.split(key)
-        logs = infos.copy()
-        logs["epoch"] = epoch
         if epoch % ARGS.eval_interval == 0:
             # Evaluate the PPO agent
             metrics = ev_ppo(
@@ -128,13 +126,13 @@ def train_ppo(ARGS: Namespace):
                 gat_2_nodes_out=gat2_nodes_out,
             )
 
-            logs["eval"] = aggregate_eval_metrics(metrics)
+            logs_eval = aggregate_eval_metrics(metrics)
 
-        wandb.log(logs, step=epoch)
+            wandb.log({"eval": logs_eval}, step=epoch)
 
         # Save the checkpoint
         checkpoint_manager.save(step=epoch, args=ocp.args.StandardSave(ppo_state))
-        logger.info(f"Epoch {epoch} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
+        # logger.info(f"Epoch {epoch} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
     wandb.finish()
 
 

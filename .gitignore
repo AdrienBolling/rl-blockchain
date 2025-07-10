@@ -20,3 +20,5 @@ __pycache__
 *.pyc
 
 wandb/
+logs/
+checkpoints/

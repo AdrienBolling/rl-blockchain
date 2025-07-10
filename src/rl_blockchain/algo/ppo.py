@@ -1,3 +1,4 @@
+import logging
 import os
 from functools import partial
 from typing import Optional, Tuple, Union, Any
@@ -9,6 +10,7 @@ import jax.numpy as jnp
 import jraph as jr
 import optax
 import orbax.checkpoint as ocp
+import wandb
 from flax import struct
 from gymnax.environments import environment
 from matplotlib.path import Path
@@ -16,6 +18,8 @@ from tqdm import tqdm
 
 from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions_obs, BlockchainEnv
+
+logger = logging.getLogger(__name__)
 
 
 @struct.dataclass
@@ -280,7 +284,6 @@ def update_ppo(
         "entropy_coef": entropy_coef,
     }
 
-
     # Loss function with aux outputs
     def loss_fn(policy_params, value_params):
         # compute per-sample losses
@@ -357,7 +360,7 @@ def compute_avg_value(infos: dict[str, jax.Array]) -> dict[str, jax.Array]:
     sum_inner = list_is_inner.sum()
     avg_gini = (infos["gini"] * list_is_inner).sum() / sum_inner
     avg_distance = (infos["distance"] * list_is_inner).sum() / sum_inner
-    return {"avg_gini": avg_gini, "avg_distance": avg_distance}
+    return {"avg_gini": avg_gini.item(), "avg_distance": avg_distance.item()}
 
 
 def train_ppo(
@@ -548,8 +551,8 @@ def eval_ppo(ppo_state: PPOState, env: BlockchainEnv, num_episodes: int = 10, ke
 
 def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: int, num_envs: int, batch_size: int,
                 lr: float, gamma: float, lambda_: float, clip_ratio: float, gat1_out: int, gat2_out: int,
-                gat2_nodes_out: int, normalize_rewards: bool = False) -> Tuple[
-    PPOState, float, float, float, dict[str, dict[str, Any]]]:
+                gat2_nodes_out: int, normalize_rewards: bool = False, to_log: bool = False, sub_epoch: int = 0) -> \
+        Tuple[PPOState, int]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
@@ -592,7 +595,12 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
 
     params_list = params_map(subkeys_params)
     observations, acts, logps, rews, dones, vals, last_values, infos_env = vm_rollout(subkeys, params_list)
-    infos_env_refined = compute_avg_value(infos_env)
+    logger.info(f"Epoch {epoch}: Collected {num_steps * num_envs} steps.")
+    if to_log:
+        infos_env_refined = compute_avg_value(infos_env)
+        infos_env_refined["avg_rewards"] = jnp.mean(rews)
+        infos_env_refined["nb_sequences_done"] = jnp.sum(dones)
+        wandb.log({"env": infos_env_refined}, step=epoch)
 
     # Compute advantages and returns
     advantages = jax.vmap(
@@ -622,6 +630,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
     # Shuffle and minibatch updates
     perm = jax.random.permutation(perm_key, flat_a.shape[0])
     for start in range(0, perm.shape[0], batch_size):
+        logger.info(f"Epoch {epoch}: Processing batch {start // batch_size + 1} / {perm.shape[0] // batch_size + 1}")
         idx = perm[start: start + batch_size]
         batch_graphs = jax.tree.map(lambda x: x[idx], flat_graphs)
         ppo_state, policy_loss, value_loss, entropy, info_coef = update_ppo(
@@ -637,22 +646,20 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
             optax.adam(lr),
             clip_ratio
         )
+        info_train = {
+            "policy_loss": policy_loss,
+            "value_loss": value_loss,
+            "entropy": entropy,
+        }
+        if to_log:
+            wandb.log({"coef": info_coef, "train": info_train, "epoch": epoch}, step=sub_epoch)
+        sub_epoch += 1
+        logger.info(f"Epoch {epoch}/batch {start} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
 
     # Update RNG and log progress
     ppo_state = ppo_state.replace(rng_key=new_ppo_key)
 
-    info_train = {
-        "policy_loss": policy_loss,
-        "value_loss": value_loss,
-        "entropy": entropy,
-    }
-    infos = {
-        "env": infos_env_refined,
-        "coef": info_coef,
-        "train": info_train,
-    }
-
-    return ppo_state, policy_loss, value_loss, entropy, infos
+    return ppo_state, sub_epoch
 
 
 def create_checkpoint_manager(
