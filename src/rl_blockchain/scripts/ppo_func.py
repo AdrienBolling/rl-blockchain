@@ -102,7 +102,7 @@ def train_ppo(ARGS: Namespace):
         ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env, num_steps=num_steps,
                                            num_envs=num_envs, batch_size=batch_size, lr=lr, gamma=gamma,
                                            lambda_=lambda_, clip_ratio=clip_ratio, gat1_out=gat1_out, gat2_out=gat2_out,
-                                           gat2_nodes_out=gat2_nodes_out, sub_epoch=sub_epoch, to_log=True)
+                                           gat2_nodes_out=gat2_nodes_out, sub_epoch=sub_epoch, to_log=True, normalize_rewards=True)
         key, subkey = jax.random.split(key)
         if epoch % ARGS.eval_interval == 0:
             logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")

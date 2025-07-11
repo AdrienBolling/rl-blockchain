@@ -17,6 +17,7 @@ from matplotlib.path import Path
 
 from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions_obs, BlockchainEnv
+from rl_blockchain.BlockEnv.NormailzationWrapper import NormalizationWrapper
 
 logger = logging.getLogger(__name__)
 
@@ -594,9 +595,9 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
     """
 
     # TODO normalization of rewards
-    # if normalize_rewards:
-    #    # If using normalization, ensure the environment is wrapped accordingly
-    #    env = NormalizationWrapper(env)
+    if normalize_rewards:
+       # If using normalization, ensure the environment is wrapped accordingly
+       env = NormalizationWrapper(env)
 
     action_dim = env.action_space(env.default_params).n
     pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, action_dim)
