@@ -14,7 +14,6 @@ import wandb
 from flax import struct
 from gymnax.environments import environment
 from matplotlib.path import Path
-from tqdm import tqdm
 
 from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions_obs, BlockchainEnv
@@ -202,7 +201,7 @@ def rollout(key_input, env: environment.Environment,
         )
 
         carry = [next_obs, next_state, next_key]
-        traj = (next_obs, action, logp, reward, done, value, infos)
+        traj = (obs, action, logp, reward, done, value, infos)
         return carry, traj
 
     # Scan over episode step loop
@@ -219,6 +218,43 @@ def rollout(key_input, env: environment.Environment,
     return observations, actions, logps, rewards, dones, values, last_value, infos
 
 
+@partial(jax.jit, static_argnames=('pol_model', 'env', 'steps_in_episode'))
+def rollout_eval(key_input, env: environment.Environment,
+                 pol_model: nn.Module, ppo_state: PPOState,
+                 env_params: EnvParams, steps_in_episode: int):
+    """Rollout a jitted gymnax episode with lax.scan."""
+    # Reset the environment
+    key_reset, key_episode = jax.random.split(key_input)
+    first_obs, first_state = env.reset(key_reset, env_params)
+
+    def policy_step(state_input, tmp):
+        """lax.scan compatible step transition in jax env."""
+        obs, state, key = state_input
+        next_key, key_step, key_net = jax.random.split(key, 3)
+        action_distribution = pol_model.apply(ppo_state.policy_params, obs)
+        action = action_distribution.mode()
+
+        next_obs, next_state, reward, done, infos = env.step(
+            key_step, state, action, env_params
+        )
+
+        carry = [next_obs, next_state, next_key]
+        traj = (obs, action, reward, done, infos)
+        return carry, traj
+
+    # Scan over episode step loop
+    (obs_end, _, _), trajs = jax.lax.scan(
+        policy_step,
+        [first_obs, first_state, key_episode],
+        None,
+        steps_in_episode
+    )
+
+    # Return masked sum of rewards accumulated by agent in episode
+    observations, actions, rewards, dones, infos = trajs
+    return observations, actions, rewards, dones, infos
+
+
 @jax.jit
 def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
     values = jnp.concatenate([values, last_value[None]], axis=0)
@@ -233,7 +269,7 @@ def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
         return (adv, v), adv
 
     (_, _), advs = jax.lax.scan(
-        fn, (0.0, last_value), jnp.arange(values.shape[0] - 2, -1, -1)
+        fn, (0.0, last_value), jnp.arange(values.shape[0] - 1)[::-1]
     )
     return advs[::-1]
 
@@ -510,41 +546,37 @@ def eval_ppo_and_log(env: BlockchainEnv, ppo_state: PPOState, num_episodes: int 
 
 def eval_ppo(ppo_state: PPOState, env: BlockchainEnv, num_episodes: int = 10, key: Optional[jnp.ndarray] = None,
              gat_1_out: int = 64, gat_2_out: int = 64, gat_2_nodes_out: int = 64):
-    metrics = {
-        "returns": [],
-        "lengths": [],
-        "rewards": [],
-        "infos": [],
-    }
-    key, subkey = jax.random.split(key)
+    metrics = {}
     env_params = env.default_params
     pol_net = PolicyNET_GAT(gat_1_out, gat_2_out, gat_2_nodes_out,
                             env.action_space(env_params).n)
-    for _ in tqdm(range(num_episodes)):
-        key, subkey_mat, subkey_st = jax.random.split(key, 3)
-        temp_params = EnvParams.create_random(env.nb_nodes, subkey_mat, env_params.nb_validators,
-                                              env_params.rewards_weights)
-        obs, st = env.reset(subkey_st, temp_params)
-        done = False
-        total_reward = 0.0
-        rewards = []
-        lengths = 0
-        infos_ = []
 
-        while not done:
-            key, subkey = jax.random.split(key)
-            dist = pol_net.apply(ppo_state.policy_params, obs)
-            a = dist.mode()
-            obs, st, r, done, infos = env.step(subkey, st, a, temp_params)
-            total_reward += r
-            rewards.append(r)
-            lengths += 1
-            infos_.append(infos)
+    @jax.jit
+    def single_rollout(rng: jax.Array, new_param: EnvParams):
+        return rollout_eval(rng, env, pol_net, ppo_state, new_param, env.default_params.max_steps_in_episode)
 
-        metrics["returns"].append(total_reward)
-        metrics["lengths"].append(lengths)
-        metrics["rewards"].append(rewards)
-        metrics["infos"].append(infos_)
+    vm_rollouts = jax.vmap(single_rollout)
+
+    params_map = jax.vmap(
+        lambda key_map: EnvParams.create_random(
+            env.nb_nodes, key_map,
+            env.default_params.nb_validators,
+            env.default_params.rewards_weights)
+    )
+
+    # RNG split
+    rollout_key, params_key = jax.random.split(ppo_state.rng_key)
+    subkeys = jax.random.split(rollout_key, num_episodes)
+    subkeys_params = jax.random.split(params_key, num_episodes)
+
+    params_list = params_map(subkeys_params)
+    _, _, rews, _, _ = vm_rollouts(subkeys, params_list)
+    logger.info(f"Evaluated {num_episodes} episodes.")
+
+    metrics["avg_returns_episode"] = rews.sum(axis=1).mean().tolist()
+    sub_rewards = rews.mean(axis=1).tolist()
+    for i, rew in enumerate(sub_rewards):
+        metrics[f"reward_{i}"] = rew
 
     return metrics
 
@@ -600,7 +632,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
         infos_env_refined = compute_avg_value(infos_env)
         infos_env_refined["avg_rewards"] = jnp.mean(rews)
         infos_env_refined["nb_sequences_done"] = jnp.sum(dones)
-        wandb.log({"env": infos_env_refined}, step=epoch)
+        wandb.log({"env": infos_env_refined}, step=sub_epoch)
 
     # Compute advantages and returns
     advantages = jax.vmap(
@@ -625,7 +657,8 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
     flat_adv = flatten(advantages)
     flat_graphs = jax.tree.map(flatten, observations)
 
-    policy_loss, value_loss, entropy, info_coef = 0.0, 0.0, 0.0, {}
+    pol_opt = optax.adam(lr)
+    val_opt = optax.adam(lr)
 
     # Shuffle and minibatch updates
     perm = jax.random.permutation(perm_key, flat_a.shape[0])
@@ -642,8 +675,8 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
             flat_adv[idx],
             pol_net.apply,
             val_net.apply,
-            optax.adam(lr),
-            optax.adam(lr),
+            pol_opt,
+            val_opt,
             clip_ratio
         )
         info_train = {

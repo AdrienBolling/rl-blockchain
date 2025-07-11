@@ -17,16 +17,6 @@ from rl_blockchain.scripts.parser import REF_FILENAME
 logger = logging.getLogger(__name__)
 
 
-def aggregate_eval_metrics(logs_eval: dict) -> dict:
-    aggregated_eval_metrics = {}
-    avg_return = np.asarray(logs_eval["returns"]).mean()
-    avg_length = np.asarray(logs_eval["lengths"]).mean()
-    individual_rewards = np.asarray(logs_eval["infos"]["rewards"]).mean(axis=0)
-    aggregated_eval_metrics["avg_return"] = avg_return
-    aggregated_eval_metrics["avg_length"] = avg_length
-    for i, rew in enumerate(logs_eval["infos"]["rewards"]):
-        aggregated_eval_metrics[f"reward_{i}"] = individual_rewards[i]
-    return aggregated_eval_metrics
 
 
 def train_ppo(ARGS: Namespace):
@@ -115,6 +105,7 @@ def train_ppo(ARGS: Namespace):
                                            gat2_nodes_out=gat2_nodes_out, sub_epoch=sub_epoch, to_log=True)
         key, subkey = jax.random.split(key)
         if epoch % ARGS.eval_interval == 0:
+            logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")
             # Evaluate the PPO agent
             metrics = ev_ppo(
                 ppo_state=ppo_state,
@@ -126,9 +117,9 @@ def train_ppo(ARGS: Namespace):
                 gat_2_nodes_out=gat2_nodes_out,
             )
 
-            logs_eval = aggregate_eval_metrics(metrics)
 
-            wandb.log({"eval": logs_eval}, step=epoch)
+            wandb.log({"eval": metrics}, step=sub_epoch)
+            logger.info(metrics)
 
         # Save the checkpoint
         checkpoint_manager.save(step=epoch, args=ocp.args.StandardSave(ppo_state))

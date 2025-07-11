@@ -123,7 +123,7 @@ def _parse_args() -> Namespace:
     train_parser.add_argument(
         "--num-steps",
         type=int,
-        default=100000,
+        default=10000,
         help="Number of steps per epoch. Default is 4000.",
     )
     train_parser.add_argument(
