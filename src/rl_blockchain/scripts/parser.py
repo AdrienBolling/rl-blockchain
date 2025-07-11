@@ -26,7 +26,7 @@ def _parse_args() -> Namespace:
         "--voting-nodes",
         type=int,
         default=7,
-        help="Number of voting nodes in the environment. Default is 5.",
+        help="Number of voting nodes in the environment. Default is 7.",
     )
     parser.add_argument(
         "--seed",

@@ -392,11 +392,13 @@ def update_ppo(
 
 
 def compute_avg_value(infos: dict[str, jax.Array]) -> dict[str, jax.Array]:
+    infos_keys = ["gini", "distance", "gini_reward", "distance_reward"]
     list_is_inner: jax.Array = infos["action_taken"] == -1
     sum_inner = list_is_inner.sum()
-    avg_gini = (infos["gini"] * list_is_inner).sum() / sum_inner
-    avg_distance = (infos["distance"] * list_is_inner).sum() / sum_inner
-    return {"avg_gini": avg_gini.item(), "avg_distance": avg_distance.item()}
+    returned_infos = {}
+    for key in infos_keys:
+        returned_infos[key] = ((infos[key] * list_is_inner).sum() / sum_inner).item()
+    return returned_infos
 
 
 def train_ppo(
@@ -546,7 +548,6 @@ def eval_ppo_and_log(env: BlockchainEnv, ppo_state: PPOState, num_episodes: int 
 
 def eval_ppo(ppo_state: PPOState, env: BlockchainEnv, num_episodes: int = 10, key: Optional[jnp.ndarray] = None,
              gat_1_out: int = 64, gat_2_out: int = 64, gat_2_nodes_out: int = 64):
-    metrics = {}
     env_params = env.default_params
     pol_net = PolicyNET_GAT(gat_1_out, gat_2_out, gat_2_nodes_out,
                             env.action_space(env_params).n)
@@ -570,8 +571,10 @@ def eval_ppo(ppo_state: PPOState, env: BlockchainEnv, num_episodes: int = 10, ke
     subkeys_params = jax.random.split(params_key, num_episodes)
 
     params_list = params_map(subkeys_params)
-    _, _, rews, _, _ = vm_rollouts(subkeys, params_list)
+    _, _, rews, _, infos = vm_rollouts(subkeys, params_list)
     logger.info(f"Evaluated {num_episodes} episodes.")
+
+    metrics = compute_avg_value(infos)
 
     metrics["avg_returns_episode"] = rews.sum(axis=1).mean().tolist()
     sub_rewards = rews.mean(axis=1).tolist()

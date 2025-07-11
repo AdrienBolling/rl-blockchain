@@ -74,11 +74,14 @@ def weighted_rewards(old_state: EnvState, new_state: EnvState, params: EnvParams
     gini_reward_value, gini_value = gini_reward(new_state, params)
     distance_reward_value, avg_value = distance_reward(old_state, params, static_params)
     weighted_value = jnp.array([gini_reward_value, distance_reward_value]) * params.rewards_weights
-    return weighted_value.sum(), {"gini": gini_value, "distance": avg_value}
+    return weighted_value.sum(), {"gini": gini_value, "gini_reward": gini_reward_value, "distance": avg_value,
+                                  "distance_reward": distance_reward_value}
 
 
 def null_reward() -> (jax.Array, dict):
     return jnp.array(0.0, dtype=jnp.float32), {
         "gini": jnp.array(0, dtype=jnp.float32),
-        "distance": jnp.array(0, dtype=jnp.float32)
+        "gini_reward": jnp.array(0, dtype=jnp.float32),
+        "distance": jnp.array(0, dtype=jnp.float32),
+        "distance_reward": jnp.array(0, dtype=jnp.float32)
     }
