@@ -4,6 +4,24 @@ import jax.numpy as jnp
 from rl_blockchain.BlockEnv.BlockchainGraph import gini_coefficient, gini_coefficient_worst
 from rl_blockchain.BlockEnv.state_params import EnvState, EnvParams, get_stake_distribution, StaticEnvParams
 
+def _gen_post_filter(inflex_pts: float, inflex_value: float) -> callable:
+    """
+    Generate a post-filtering function with the given inflexion points and values.
+    """
+    @jax.jit
+    def post_filter(previous_reward: float) -> float:
+        """
+        Post-filtering function.
+        """
+        return jax.lax.cond(
+            previous_reward <= inflex_pts,
+            lambda r: r * inflex_value / inflex_pts,
+            lambda r: 1 + (r - 1) * (1 - inflex_value) / (1 - inflex_pts),
+            previous_reward
+        )
+    return post_filter
+
+_post_filter_gini = _gen_post_filter(0.95 / 1.5, 0.95)  # Default inflexion point and value for Gini reward
 
 def gini_reward(state: EnvState, params: EnvParams) -> tuple[jax.Array, jax.Array]:
     """
@@ -21,8 +39,8 @@ def gini_reward(state: EnvState, params: EnvParams) -> tuple[jax.Array, jax.Arra
     worst_gini_not_null = jnp.where(worst_gini == 0, 1.0, worst_gini)
     relative_gini = jnp.clip(current_gini / worst_gini_not_null, 0, 1)
     reward = 1.0 - relative_gini
-
-    return jnp.where(sum_chosen_node == 0, reward, 0.0), relative_gini
+    post_filtered_reward = _post_filter_gini(reward)
+    return jnp.where(sum_chosen_node == 0, post_filtered_reward, 0.0), relative_gini
 
 
 # @jax.jit
@@ -45,8 +63,8 @@ def get_avg_distance(state: EnvState, params: EnvParams) -> jax.Array:
     return total / denom
 
 
-# @partial(jax.jit, static_argnames=['params'])
-# @jax.jit
+_post_filter_distance = _gen_post_filter(0.5, 0.25)  # Default inflexion point and value for distance reward
+
 def distance_reward(state: EnvState, params: EnvParams, static_params: StaticEnvParams) -> tuple[jax.Array, jax.Array]:
     # EnvParams
     """
@@ -65,7 +83,8 @@ def distance_reward(state: EnvState, params: EnvParams, static_params: StaticEnv
     reward = gain / scale
     reward_clipped = jnp.clip(reward, -1, 1)
     reward_rescaled = (1 - reward_clipped) / 2
-    return jnp.where(params.nb_validators == static_params.nb_nodes, 0.0, reward_rescaled), avg_delay
+    post_filtered_reward = _post_filter_distance(reward_rescaled)
+    return jnp.where(params.nb_validators == static_params.nb_nodes, 0.0, post_filtered_reward), avg_delay
 
 
 @jax.jit
