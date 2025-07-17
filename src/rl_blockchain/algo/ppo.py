@@ -24,10 +24,8 @@ logger = logging.getLogger(__name__)
 
 @struct.dataclass
 class PPOState:
-    policy_params: dict
-    value_params: dict
-    policy_opt_state: optax.OptState
-    value_opt_state: optax.OptState
+    params: dict
+    opt_state: optax.OptState
     rng_key: jnp.ndarray
 
 
@@ -44,6 +42,81 @@ def _attention_logit_fn(
     edges = edges[:, None]
     x = jnp.concatenate((sender_attr, receiver_attr, edges), axis=1)
     return nn.Dense(1)(x)
+
+
+def default_mlp_init(scale=0.05):
+    return nn.initializers.uniform(scale)
+
+
+class CategoricalSeparateMLP(nn.Module):
+    """Split Actor-Critic Architecture for PPO."""
+
+    num_output_units: int
+    num_hidden_units: int
+    num_hidden_layers: int
+    prefix_actor: str = "actor"
+    prefix_critic: str = "critic"
+    model_name: str = "separate-mlp"
+    flatten_2d: bool = False  # Catch case
+    flatten_3d: bool = False  # Rooms/minatar case
+
+    @nn.compact
+    def __call__(self, x):
+        # Flatten a single 2D image
+        if self.flatten_2d and len(x.shape) == 2:
+            x = x.reshape(-1)
+        # Flatten a batch of 2d images into a batch of flat vectors
+        if self.flatten_2d and len(x.shape) > 2:
+            x = x.reshape(x.shape[0], -1)
+
+        # Flatten a single 3D image
+        if self.flatten_3d and len(x.shape) == 3:
+            x = x.reshape(-1)
+        # Flatten a batch of 3d images into a batch of flat vectors
+        if self.flatten_3d and len(x.shape) > 3:
+            x = x.reshape(x.shape[0], -1)
+        x_v = nn.relu(
+            nn.Dense(
+                self.num_hidden_units,
+                name=self.prefix_critic + "_fc_1",
+                bias_init=default_mlp_init(),
+            )(x)
+        )
+        # Loop over rest of intermediate hidden layers
+        for i in range(1, self.num_hidden_layers):
+            x_v = nn.relu(
+                nn.Dense(
+                    self.num_hidden_units,
+                    name=self.prefix_critic + f"_fc_{i + 1}",
+                    bias_init=default_mlp_init(),
+                )(x_v)
+            )
+        v = nn.Dense(
+            1,
+            name=self.prefix_critic + "_fc_v",
+            bias_init=default_mlp_init(),
+        )(x_v)
+
+        x_a = nn.relu(
+            nn.Dense(
+                self.num_hidden_units,
+                bias_init=default_mlp_init(),
+            )(x)
+        )
+        # Loop over rest of intermediate hidden layers
+        for i in range(1, self.num_hidden_layers):
+            x_a = nn.relu(
+                nn.Dense(
+                    self.num_hidden_units,
+                    bias_init=default_mlp_init(),
+                )(x_a)
+            )
+        logits = nn.Dense(
+            self.num_output_units,
+            bias_init=default_mlp_init(),
+        )(x_a)
+        pi = distrax.Categorical(logits=logits)
+        return v.squeeze(), pi
 
 
 class PolicyNET_GAT(nn.Module):
@@ -179,9 +252,9 @@ class ValueNET_GAT(nn.Module):
         return graph.globals.squeeze()
 
 
-@partial(jax.jit, static_argnames=('pol_model', 'val_model', 'env', 'steps_in_episode'))
+@partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode'))
 def rollout(key_input, env: environment.Environment,
-            pol_model: nn.Module, val_model: nn.Module, ppo_state: PPOState,
+            model: nn.Module, ppo_state: PPOState,
             env_params: EnvParams, steps_in_episode: int):
     """Rollout a jitted gymnax episode with lax.scan."""
     # Reset the environment
@@ -192,10 +265,9 @@ def rollout(key_input, env: environment.Environment,
         """lax.scan compatible step transition in jax env."""
         obs, state, key = state_input
         next_key, key_step, key_net = jax.random.split(key, 3)
-        action_distribution = pol_model.apply(ppo_state.policy_params, obs)
+        value, action_distribution = model.apply(ppo_state.params, obs, )
         action = action_distribution.sample(seed=key_net)
         logp = action_distribution.log_prob(action)
-        value = val_model.apply(ppo_state.value_params, obs)
 
         next_obs, next_state, reward, done, infos = env.step(
             key_step, state, action, env_params
@@ -213,7 +285,7 @@ def rollout(key_input, env: environment.Environment,
         steps_in_episode
     )
 
-    last_value = val_model.apply(ppo_state.value_params, obs_end)
+    last_value, _ = model.apply(ppo_state.params, obs_end)
     # Return masked sum of rewards accumulated by agent in episode
     observations, actions, logps, rewards, dones, values, infos = trajs
     return observations, actions, logps, rewards, dones, values, last_value, infos
@@ -275,7 +347,7 @@ def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
     return advs[::-1]
 
 
-@partial(jax.jit, static_argnames=('policy_apply', 'value_apply', 'policy_optimizer', 'value_optimizer', 'clip_ratio'))
+@partial(jax.jit, static_argnames=('model_apply', 'model_optimizer', 'clip_ratio'))
 def update_ppo(
         ppo_state: PPOState,
         observation: jr.GraphsTuple,
@@ -283,10 +355,9 @@ def update_ppo(
         old_logps: jnp.ndarray,
         returns: jnp.ndarray,
         advantages: jnp.ndarray,
-        policy_apply,
-        value_apply,
-        policy_optimizer,
-        value_optimizer,
+        old_values: jnp.ndarray,
+        model_apply,
+        model_optimizer,
         clip_ratio: float = 0.2,
         value_coef: float = 0.5,
         entropy_coef: float = 0.01
@@ -322,35 +393,39 @@ def update_ppo(
     }
 
     # Loss function with aux outputs
-    def loss_fn(policy_params, value_params):
+    def loss_fn(model_params):
         # compute per-sample losses
-        def sample_loss(p_params, v_params, graph, a, old_lp, ret, adv):
-            dist = policy_apply(p_params, graph)
+        def sample_loss(m_params, graph, a, old_lp, ret, adv, old_val):
+            value_pred, dist = model_apply(m_params, graph)
             new_lp = dist.log_prob(a)
             ratio = jnp.exp(new_lp - old_lp)
 
-            clipped = jnp.clip(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
-            policy_loss = -jnp.minimum(ratio * adv, clipped * adv)
+            clipp_actor = jnp.clip(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
+            policy_loss = -jnp.minimum(ratio * adv, clipp_actor * adv)
             entropy = dist.entropy()
 
-            value_pred = value_apply(v_params, graph)
-            diff = ret - value_pred
-            value_loss = jnp.inner(diff, diff)
-            return policy_loss + value_coef * value_loss - entropy * entropy_coef, (policy_loss, value_loss, entropy)
+            value_pred_clipped = old_val + (value_pred - old_val).clip(
+                -clip_ratio, clip_ratio)
+            value_loss = jnp.square(value_pred - ret)
+            value_loss_clipped = jnp.square(value_pred_clipped - ret)
+            value_loss = jnp.maximum(value_loss, value_loss_clipped)
+
+            total_loss = policy_loss + value_coef * value_loss - entropy * entropy_coef
+            return total_loss, (policy_loss, value_loss, entropy)
 
         # Vectorize over batch
         total_loss, (pl_batch, vl_batch, ent_batch) = jax.vmap(
             sample_loss,
-            in_axes=(None, None, 0, 0, 0, 0, 0),
+            in_axes=(None, 0, 0, 0, 0, 0, 0),
             out_axes=(0, (0, 0, 0))
         )(
-            policy_params,
-            value_params,
+            model_params,
             observation,
             actions,
             old_logps,
             returns,
             advantages,
+            old_values
         )
         # total_loss is array of shape [B], pl_batch/ vl_batch each shape [B]
         mean_loss = jnp.mean(total_loss)
@@ -361,32 +436,20 @@ def update_ppo(
         return mean_loss, (mean_pl_batch, mean_vl_batch, mean_ent_batch)
 
     # Compute gradients
-    (loss_val, (mean_pl, mean_vl, mean_ent)), (policy_grads, value_grads) = jax.value_and_grad(
-        loss_fn, has_aux=True, argnums=(0, 1)
-    )(ppo_state.policy_params, ppo_state.value_params)
+    (loss_val, (mean_pl, mean_vl, mean_ent)), grads = jax.value_and_grad(
+        loss_fn, has_aux=True
+    )(ppo_state.params)
 
-    # Apply policy optimizer step
-    policy_updates, new_pol_opt_state = policy_optimizer.update(
-        policy_grads, ppo_state.policy_opt_state
-    )
-    new_policy_params = optax.apply_updates(
-        ppo_state.policy_params, policy_updates
+    model_updates, new_model_opt_state = model_optimizer.update(
+        grads, ppo_state.opt_state
     )
 
-    # Apply value optimizer step
-    value_updates, new_val_opt_state = value_optimizer.update(
-        value_grads, ppo_state.value_opt_state
-    )
-    new_value_params = optax.apply_updates(
-        ppo_state.value_params, value_updates
-    )
+    new_model_params = optax.apply_updates(ppo_state.params, model_updates)
 
     # Construct new state
     new_state = ppo_state.replace(
-        policy_params=new_policy_params,
-        value_params=new_value_params,
-        policy_opt_state=new_pol_opt_state,
-        value_opt_state=new_val_opt_state,
+        params=new_model_params,
+        opt_state=new_model_opt_state,
     )
 
     return new_state, mean_pl, mean_vl, mean_ent, info_coef
@@ -404,6 +467,7 @@ def compute_avg_value(infos: dict[str, jax.Array]) -> dict[str, jax.Array]:
 
 def train_ppo(
         env: BlockchainEnv,
+        model: nn.module,
         num_steps,
         num_envs,
         num_epochs,
@@ -422,17 +486,15 @@ def train_ppo(
     action_range = env.action_space(default_params).n
     sample_obs = env.observation_space(default_params).sample(obs_key)
 
-    pol_net = PolicyNET_GAT(64, 64, 64, action_range)
-    val_net = ValueNET_GAT(64, 64, 64)
-    # Initialize with GraphsTuple
-    pol_vars = pol_net.init(pol_key, sample_obs)
-    val_vars = val_net.init(val_key, sample_obs)
+    first_obs, first_state = env.reset(obs_key,env.default_params)
 
-    pol_opt = optax.adam(lr)
-    val_opt = optax.adam(lr)
-    pol_opt_state = pol_opt.init(pol_vars)
-    val_opt_state = val_opt.init(val_vars)
-    ppo_state = PPOState(pol_vars, val_vars, pol_opt_state, val_opt_state, ppo_key)
+    # Initialize with GraphsTuple
+
+    model_vars = model.init(obs_key, sample_obs)
+
+    model_opt = optax.adam(lr)
+    model_opt_state = model_opt.init(model_vars)
+    ppo_state = PPOState(model_vars, model_opt_state, ppo_key)
 
     # rollout fns expect graph inputs inside rollout
     @jax.jit
@@ -440,8 +502,7 @@ def train_ppo(
         return rollout(
             rng,
             env,
-            pol_net,
-            val_net,
+            model,
             ppo_state,
             new_param,
             num_steps,
@@ -450,8 +511,7 @@ def train_ppo(
     vm_rollout = jax.vmap(single_rollout)
 
     params_map = jax.vmap(
-        lambda key_map: EnvParams.create_random(env.nb_nodes, key_map, env.default_params.nb_validators,
-                                                env.default_params.rewards_weights),
+        lambda _: env.default_params,
     )
 
     for epoch in range(num_epochs):
@@ -462,7 +522,7 @@ def train_ppo(
         params_list = params_map(subkeys_params)
 
         observations, acts, logps, rews, dones, vals, last_values, infos = vm_rollout(subkeys, params_list)
-        refined_value = compute_avg_value(infos)
+        # refined_value = compute_avg_value(infos)
 
         # Extract graphs and last graphs
         # GAE over each env
@@ -477,6 +537,7 @@ def train_ppo(
             )
         )(rews, vals, dones, last_values)
         returns = advantages + vals
+        advantages_norm = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         # Helper to flatten env × time dims
         def flatten(x):
@@ -486,7 +547,8 @@ def train_ppo(
         flat_a = flatten(acts)
         flat_lp = flatten(logps)
         flat_r = flatten(returns)
-        flat_adv = flatten(advantages)
+        flat_adv = flatten(advantages_norm)
+        flat_val = flatten(vals)
 
         # Flatten *each* leaf in the GraphsTuple of states.blockchain
         flat_graphs = jax.tree.map(flatten, observations)
@@ -507,38 +569,39 @@ def train_ppo(
                 flat_lp[batch_idx],  # old_logps
                 flat_r[batch_idx],  # returns
                 flat_adv[batch_idx],  # advantages
-                pol_net.apply,  # policy_apply
-                val_net.apply,  # value_apply
-                pol_opt,  # policy_optimizer (optax.OptState)
-                val_opt,  # value_optimizer
+                flat_val[batch_idx],
+                model.apply,  # policy_apply
+                model_opt,  # policy_optimizer (optax.OptState)
                 clip_ratio  # clip_ratio
             )
+        v, pi = model.apply(ppo_state.params, first_obs)
+        print(f"Policy: {pi.logits}, Value: {v}")
         ppo_state = ppo_state.replace(rng_key=new_ppo_key)
         print(f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}, Entropy={entropy:.3f}")
         print(f"rewards : {rews.sum():.3f}, longueur {rews.shape}, dones {dones.sum():.3f}")
-        string_builder = ""
-        for key, value in refined_value.items():
-            string_builder += f"{key}: {value:.3f}, "
-        print("Infos Value -> ", string_builder)
+        # print("Infos -> ", infos)
+        # string_builder = ""
+        # for key, value in refined_value.items():
+        #     string_builder += f"{key}: {value:.3f}, "
+        # print("Infos Value -> ", string_builder)
 
     return ppo_state
 
 
-def eval_ppo_and_log(env: BlockchainEnv, ppo_state: PPOState, num_episodes: int = 10, key=None):
+def eval_ppo_and_log(env: BlockchainEnv, model: nn.module, ppo_state: PPOState, num_episodes: int = 10, key=None):
     returns = []
     env_params = env.default_params
-    pol_net = PolicyNET_GAT(64, 64, 64,
-                            env.action_space(env_params).n)
     for _ in range(num_episodes):
         key, subkey_mat, subkey_st = jax.random.split(key, 3)
-        temp_params = EnvParams.create_random(env.nb_nodes, subkey_mat, env_params.nb_validators,
-                                              env_params.rewards_weights)
+        # temp_params = EnvParams.create_random(env.nb_nodes, subkey_mat, env_params.nb_validators,
+        #                                       env_params.rewards_weights)
+        temp_params = env_params  # Use default params for evaluation
         obs, st = env.reset(subkey_st, temp_params)
         done = False
         tot = 0.0
         while not done:
             key, subkey = jax.random.split(key)
-            dist = pol_net.apply(ppo_state.policy_params, obs)
+            _, dist = model.apply(ppo_state.params, obs)
             a = dist.mode()
             obs, st, r, done, _ = env.step(subkey, st, a, temp_params)
             tot += r
@@ -596,8 +659,8 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
 
     # TODO normalization of rewards
     if normalize_rewards:
-       # If using normalization, ensure the environment is wrapped accordingly
-       env = NormalizationWrapper(env)
+        # If using normalization, ensure the environment is wrapped accordingly
+        env = NormalizationWrapper(env)
 
     action_dim = env.action_space(env.default_params).n
     pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, action_dim)
