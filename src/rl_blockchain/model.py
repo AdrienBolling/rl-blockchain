@@ -7,21 +7,6 @@ from jax import numpy as jnp
 from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions_obs
 
 
-def make_embed_fn(latent_size):
-    def embed(inputs):
-        return nn.Dense(latent_size)(inputs)
-
-    return embed
-
-
-def _attention_logit_fn(
-        sender_attr: jnp.ndarray, receiver_attr: jnp.ndarray, edges: jnp.ndarray
-) -> jnp.ndarray:
-    edges = edges[:, None]
-    x = jnp.concatenate((sender_attr, receiver_attr, edges), axis=1)
-    return nn.Dense(1)(x)
-
-
 def default_mlp_init(scale=0.05):
     return nn.initializers.uniform(scale)
 
@@ -97,117 +82,102 @@ class CategoricalSeparateMLP(nn.Module):
         return v.squeeze(), pi
 
 
+def make_embed_fn(latent_size):
+    sequential_layer = nn.Sequential([
+        nn.Dense(latent_size),
+        nn.relu,
+        nn.Dense(latent_size),
+    ])
+
+    @jr.concatenated_args
+    def embed(inputs):
+        return sequential_layer(inputs)
+
+    return embed
+
+
+def make_attention_logit_fn(latent_size):
+    sequential_layer = nn.Sequential([
+        nn.LayerNorm(),
+        nn.Dense(latent_size),
+        nn.relu,
+    ])
+
+    @jr.concatenated_args
+    def attention_logit_fn(inputs) -> jnp.ndarray:
+        return sequential_layer(inputs)
+
+    return attention_logit_fn
+
+
+def attention_reduce_fn(edges: jnp.ndarray, attention: jnp.ndarray):
+    return edges * attention
+
+
 class PPO_NET_GAT(nn.Module):
-    gat1_output_dim: int
-    gat2_output_dim: int
+    backbone_gat1_output_dim: int
+    backbone_gat2_output_dim: int
     gat2_nodes_output_dim: int
     action_dim: int
 
     @nn.compact
-    def __call__(self, graph: jr.GraphsTuple) -> (jax.Array, distrax.Categorical):
+    def __call__(self, graph: jr.GraphsTuple):
         mask = compute_legal_actions_obs(graph)
-        # Two GCN layers
-        pol_gcn1 = jr.GraphConvolution(
-            update_node_fn=lambda n: jax.nn.relu(
-                make_embed_fn(self.gat1_output_dim)(n)
-            ),
-            add_self_edges=True,
-        )
-        pol_gcn2 = jr.GraphConvolution(
-            update_node_fn=lambda n: jax.nn.relu(
-                make_embed_fn(self.gat2_output_dim)(n)
-            ),
-            add_self_edges=True,
-        )
-        # Two GAT layers
-        pol_gat1 = jr.GAT(
-            attention_query_fn=lambda n: make_embed_fn(self.gat1_output_dim)(n),
-            attention_logit_fn=_attention_logit_fn,
-            node_update_fn=None,
-        )
-        pol_gat2 = jr.GAT(
-            attention_query_fn=lambda n: make_embed_fn(self.gat2_output_dim)(n),
-            attention_logit_fn=_attention_logit_fn,
-            node_update_fn=lambda n: make_embed_fn(self.gat2_nodes_output_dim)(n),
+        graph = graph._replace(edges=graph.edges[:, None], globals=graph.globals[:, None])
+
+        net_gat_1 = jr.GraphNetGAT(update_edge_fn=make_embed_fn(self.backbone_gat1_output_dim),
+                                   update_node_fn=make_embed_fn(self.backbone_gat1_output_dim),
+                                   update_global_fn=make_embed_fn(self.backbone_gat1_output_dim),
+                                   attention_logit_fn=make_attention_logit_fn(self.backbone_gat1_output_dim),
+                                   attention_reduce_fn=attention_reduce_fn
+                                   )
+
+        net_gat_2 = jr.GraphNetGAT(update_edge_fn=make_embed_fn(self.backbone_gat2_output_dim),
+                                   update_node_fn=make_embed_fn(self.backbone_gat2_output_dim),
+                                   update_global_fn=make_embed_fn(self.backbone_gat2_output_dim),
+                                   attention_logit_fn=make_attention_logit_fn(self.backbone_gat2_output_dim),
+                                   attention_reduce_fn=attention_reduce_fn
+                                   )
+
+        net_gnn_val = jr.GraphNetwork(
+            update_edge_fn=make_embed_fn(3),
+            update_node_fn=make_embed_fn(self.gat2_nodes_output_dim),
+            update_global_fn=None,
         )
 
-        # # Initialize globals to zero of shape [batch, action_dim]
-        # # TODO: Check if this is correct
-        # pol_graph = graph._replace(
-        #     globals=jnp.zeros((graph.globals.shape[0], self.action_dim))
-        # )
-
-        @jr.concatenated_args
-        def edge_fn(attrs):
-            return jax.nn.relu(make_embed_fn(self.gat1_output_dim)(attrs))
-
-        @jr.concatenated_args
-        def node_fn(attrs):
-            return jax.nn.relu(make_embed_fn(self.gat1_output_dim)(attrs))
-
-        @jr.concatenated_args
-        def global_fn(attrs):
-            return jax.nn.relu(make_embed_fn(self.action_dim)(attrs))
-
-        pol_gnn = jr.GraphNetwork(
-            update_edge_fn=edge_fn,
-            update_node_fn=node_fn,
-            update_global_fn=global_fn,
+        net_last_gnn_val = jr.GraphNetwork(
+            update_edge_fn=None,
+            update_node_fn=None,
+            update_global_fn=make_embed_fn(1),
         )
 
-        pol_graph = pol_gcn1(graph)
-        pol_graph = pol_gcn2(pol_graph)
-        pol_graph = pol_gat1(pol_graph)
-        pol_graph = pol_gat2(pol_graph)
-        pol_graph = pol_graph._replace(edges=pol_graph.edges[:, None])
-        pol_graph = pol_gnn(pol_graph)
+        net_gnn_pol = jr.GraphNetwork(
+            update_edge_fn=make_embed_fn(3),
+            update_node_fn=make_embed_fn(self.gat2_nodes_output_dim),
+            update_global_fn=None,
+        )
 
-        squeezed_globals = pol_graph.globals.squeeze()
+        net_last_gnn_pol = jr.GraphNetwork(
+            update_edge_fn=None,
+            update_node_fn=make_embed_fn(1),
+            update_global_fn=make_embed_fn(1),
+        )
+
+        graph_1 = net_gat_1(graph)
+        graph_2 = net_gat_2(graph_1)
+
+        val_graph_3 = net_gnn_val(graph_2)
+        val_graph_4 = net_last_gnn_val(val_graph_3)
+        val = jnp.squeeze(val_graph_4.globals)
+
+        pol_graph_3 = net_gnn_pol(graph_2)
+        pol_graph_4 = net_last_gnn_pol(pol_graph_3)
+
+        pol = jnp.concat([pol_graph_4.globals, pol_graph_4.nodes])
+        squeezed_globals = pol.squeeze()
         full_inf = jnp.full((self.action_dim,), -jnp.inf)
         masked_globals = jax.lax.select(mask, squeezed_globals, full_inf)
 
         pi = distrax.Categorical(logits=masked_globals)
 
-        # Two GCN layers
-        val_gcn1 = jr.GraphConvolution(
-            update_node_fn=lambda n: jax.nn.relu(
-                make_embed_fn(self.gat1_output_dim)(n)
-            ),
-            add_self_edges=True,
-        )
-        val_gcn2 = jr.GraphConvolution(
-            update_node_fn=lambda n: jax.nn.relu(
-                make_embed_fn(self.gat2_output_dim)(n)
-            ),
-            add_self_edges=True,
-        )
-        # Two GAT layers
-        val_gat1 = jr.GAT(
-            attention_query_fn=lambda n: make_embed_fn(self.gat1_output_dim)(n),
-            attention_logit_fn=_attention_logit_fn,
-            node_update_fn=None,
-        )
-        val_gat2 = jr.GAT(
-            attention_query_fn=lambda n: make_embed_fn(self.gat2_output_dim)(n),
-            attention_logit_fn=_attention_logit_fn,
-            node_update_fn=lambda n: make_embed_fn(self.gat2_nodes_output_dim)(n),
-        )
-        # Initialize globals to zero of shape [batch,1]
-        # graph = graph._replace(globals=jnp.zeros((graph.globals.shape[0], 1)))
-
-        val_gnn = jr.GraphNetwork(
-            update_edge_fn=edge_fn,
-            update_node_fn=node_fn,
-            update_global_fn=global_fn,
-        )
-
-        val_graph = val_gcn1(graph)
-        val_graph = val_gcn2(val_graph)
-        val_graph = val_gat1(val_graph)
-        val_graph = val_gat2(val_graph)
-        val_graph = val_graph._replace(edges=val_graph.edges[:, None])
-        val_graph = val_gnn(val_graph)
-
-        # Return shape [batch]
-        val = val_graph.globals.squeeze()
         return val, pi

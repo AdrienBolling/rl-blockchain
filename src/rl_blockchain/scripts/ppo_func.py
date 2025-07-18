@@ -41,16 +41,15 @@ def train_ppo(ARGS: Namespace):
     sub_epoch = 0
 
     env_name = ARGS.env.lower()
-    if env_name == "blockchain":
+    if env_name == "blockenv":
         config = {"n_nodes": ARGS.n_nodes, "gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
                   "reward_weights": ARGS.reward_weights}
-        model, env, first_param, create_params_fn, log_fn = GenericEnvFactory.create("blockchain", key_param, config)
     elif env_name == "cartpole":
         config = {}
-        model, env, first_param, create_params_fn, log_fn = GenericEnvFactory.create("cartpole", key_param, config)
     else:
         raise ValueError(
             f"Unknown environment: {env_name}. Available environments: {GenericEnvFactory.available_environments()}")
+    model, env, first_param, create_params_fn, log_fn = GenericEnvFactory.create(env_name, key_param, config)
 
     # If we need to resume a training, get the name of the checkpoint
     chkpt_name = ARGS.checkpoint

@@ -83,7 +83,7 @@ def setup_wandb(args: Namespace) -> wandb.sdk.wandb_run.Run:
             project=project,
             entity=entity,
             name=run_id,
-            id=run_id,
+            # id=run_id,
             config=config,
             group=args.algo,
             tags=args.wandb_tags,

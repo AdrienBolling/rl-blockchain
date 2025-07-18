@@ -129,7 +129,7 @@ def _parse_args() -> Namespace:
     train_parser.add_argument(
         "--num-envs",
         type=int,
-        default=5,
+        default=8,
         help="Number of parallel environments. Default is 5.",
     )
     train_parser.add_argument(

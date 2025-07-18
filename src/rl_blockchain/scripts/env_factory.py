@@ -141,5 +141,5 @@ class GenericEnvFactory:
 
 
 # Registration
-GenericEnvFactory.register("blockchain", BlockchainEnvBuilder())
+GenericEnvFactory.register("blockenv", BlockchainEnvBuilder())
 GenericEnvFactory.register("cartpole", CartPoleEnvBuilder())
