@@ -112,6 +112,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
     def default_params(self) -> EnvParams:
         return self._first_params
 
+    @property
     def num_actions(self) -> int:
         """Number of actions possible in environment."""
         return 1 + self._static_params.nb_nodes

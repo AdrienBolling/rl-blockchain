@@ -1,22 +1,19 @@
 import logging
 import re
+import string
 from argparse import Namespace
 
 import jax
-import numpy as np
+import optax
 import orbax.checkpoint as ocp
 import wandb
 from tqdm import tqdm
 
-from rl_blockchain.BlockEnv import BlockchainEnv, StaticEnvParams
-from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch
 from rl_blockchain.algo.ppo import eval_ppo as ev_ppo
-from rl_blockchain.scripts.parser import REF_FILENAME
+from rl_blockchain.scripts.env_factory import GenericEnvFactory
 
 logger = logging.getLogger(__name__)
-
-
 
 
 def train_ppo(ARGS: Namespace):
@@ -44,9 +41,16 @@ def train_ppo(ARGS: Namespace):
 
     sub_epoch = 0
 
-    env_params = EnvParams.create_random(ARGS.n_nodes, key_param, ARGS.voting_nodes, ARGS.reward_weights)
-    static_params = StaticEnvParams.create(ARGS.n_nodes, REF_FILENAME[ARGS.n_nodes])
-    env = BlockchainEnv(env_params, static_params)
+    env_name =  ARGS.env.lowercase()
+    if env_name == "blockchain":
+        config = {"n_nodes": ARGS.n_nodes, "gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
+                  "reward_weights": ARGS.reward_weights}
+        model, env, first_param, create_params_fn = GenericEnvFactory.create("blockchain", key_param, config)
+    elif env_name == "cartpole":
+        config = {}
+        model, env, first_param, create_params_fn = GenericEnvFactory.create("cartpole", key_param, config)
+    else:
+        raise ValueError(f"Unknown environment: {env_name}. Available environments: {GenericEnvFactory.available_environments()}")
 
     # If we need to resume a training, get the name of the checkpoint
     chkpt_name = ARGS.checkpoint
@@ -80,8 +84,6 @@ def train_ppo(ARGS: Namespace):
         save_interval_steps=1,
     )
 
-    gat1_out, gat2_out, gat2_nodes_out = ARGS.gat_arch
-
     # Create the PPO state
     ppo_state = create_ppo_state(
         checkpoint_manager=checkpoint_manager,
@@ -90,19 +92,21 @@ def train_ppo(ARGS: Namespace):
         env=env,
         seed=ARGS.seed,
         lr=lr,
-        gat1_out=gat1_out,
-        gat2_out=gat2_out,
-        gat2_nodes_out=gat2_nodes_out,
+        model=model
     )
+
+    model_opt = optax.adam(lr)
 
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
         # Train for one epoch
         logger.info(f"Epoch {epoch + 1}/{num_epochs}")
-        ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env, num_steps=num_steps,
-                                           num_envs=num_envs, batch_size=batch_size, lr=lr, gamma=gamma,
-                                           lambda_=lambda_, clip_ratio=clip_ratio, gat1_out=gat1_out, gat2_out=gat2_out,
-                                           gat2_nodes_out=gat2_nodes_out, sub_epoch=sub_epoch, to_log=True, normalize_rewards=True)
+        ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env, model_opt=model_opt, model=model,
+                                           create_params_fn=create_params_fn,
+                                           num_steps=num_steps,
+                                           num_envs=num_envs, batch_size=batch_size, gamma=gamma,
+                                           lambda_=lambda_, clip_ratio=clip_ratio, sub_epoch=sub_epoch, to_log=True,
+                                           normalize_rewards=True)
         key, subkey = jax.random.split(key)
         if epoch % ARGS.eval_interval == 0:
             logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")
@@ -110,13 +114,10 @@ def train_ppo(ARGS: Namespace):
             metrics = ev_ppo(
                 ppo_state=ppo_state,
                 env=env,
+                model=model,
                 num_episodes=ARGS.eval_episodes,
                 key=subkey,
-                gat_1_out=gat1_out,
-                gat_2_out=gat2_out,
-                gat_2_nodes_out=gat2_nodes_out,
             )
-
 
             wandb.log({"eval": metrics}, step=sub_epoch)
             logger.info(metrics)

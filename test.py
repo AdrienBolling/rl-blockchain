@@ -30,6 +30,8 @@ def main():
     env_params = EnvParams.create_random(25, subkey, nb_validators=7, rewards_weights=[1, 1])
     static_params = StaticEnvParams.create(25, "ref_grid_min_max/grid_25.csv")
     env = BlockchainEnv(env_params, static_params)
+    create_params_fn = lambda key_map: EnvParams.create_random(env.nb_nodes, key_map, env_params.nb_validators,
+                                                env_params.rewards_weights)
     
     key, subkey = jax.random.split(subkey)
 

@@ -13,8 +13,8 @@ def _parse_args() -> Namespace:
     parser.add_argument(
         "--env",
         type=str,
-        default="BlockchainEnv_intermediary",
-        help="Environment to use. Default is 'BlockchainEnv_intermediary'.",
+        default="blockenv",
+        help="Environment to use. Default is 'BlockEnv'.",
     )
     parser.add_argument(
         "--n-nodes",

@@ -1,7 +1,7 @@
 import logging
 import os
 from functools import partial
-from typing import Optional, Tuple, Union, Any
+from typing import Optional, Tuple, Union, Any, Callable
 
 import distrax
 import flax.linen as nn
@@ -13,7 +13,9 @@ import orbax.checkpoint as ocp
 import wandb
 from flax import struct
 from gymnax.environments import environment
+from gymnax.environments.environment import TEnvParams
 from matplotlib.path import Path
+from optax._src.base import GradientTransformationExtraArgs
 
 from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions_obs, BlockchainEnv
@@ -119,43 +121,45 @@ class CategoricalSeparateMLP(nn.Module):
         return v.squeeze(), pi
 
 
-class PolicyNET_GAT(nn.Module):
+class PPO_NET_GAT(nn.Module):
     gat1_output_dim: int
     gat2_output_dim: int
     gat2_nodes_output_dim: int
     action_dim: int
 
     @nn.compact
-    def __call__(self, graph: jr.GraphsTuple) -> distrax.Categorical:
+    def __call__(self, graph: jr.GraphsTuple) -> (jax.Array, distrax.Categorical):
         mask = compute_legal_actions_obs(graph)
         # Two GCN layers
-        gcn1 = jr.GraphConvolution(
+        pol_gcn1 = jr.GraphConvolution(
             update_node_fn=lambda n: jax.nn.relu(
                 make_embed_fn(self.gat1_output_dim)(n)
             ),
             add_self_edges=True,
         )
-        gcn2 = jr.GraphConvolution(
+        pol_gcn2 = jr.GraphConvolution(
             update_node_fn=lambda n: jax.nn.relu(
                 make_embed_fn(self.gat2_output_dim)(n)
             ),
             add_self_edges=True,
         )
         # Two GAT layers
-        gat1 = jr.GAT(
+        pol_gat1 = jr.GAT(
             attention_query_fn=lambda n: make_embed_fn(self.gat1_output_dim)(n),
             attention_logit_fn=_attention_logit_fn,
             node_update_fn=None,
         )
-        gat2 = jr.GAT(
+        pol_gat2 = jr.GAT(
             attention_query_fn=lambda n: make_embed_fn(self.gat2_output_dim)(n),
             attention_logit_fn=_attention_logit_fn,
             node_update_fn=lambda n: make_embed_fn(self.gat2_nodes_output_dim)(n),
         )
-        # Initialize globals to zero of shape [batch, action_dim]
-        graph = graph._replace(
-            globals=jnp.zeros((graph.globals.shape[0], self.action_dim))
-        )
+
+        # # Initialize globals to zero of shape [batch, action_dim]
+        # # TODO: Check if this is correct
+        # pol_graph = graph._replace(
+        #     globals=jnp.zeros((graph.globals.shape[0], self.action_dim))
+        # )
 
         @jr.concatenated_args
         def edge_fn(attrs):
@@ -169,87 +173,68 @@ class PolicyNET_GAT(nn.Module):
         def global_fn(attrs):
             return jax.nn.relu(make_embed_fn(self.action_dim)(attrs))
 
-        gnn = jr.GraphNetwork(
+        pol_gnn = jr.GraphNetwork(
             update_edge_fn=edge_fn,
             update_node_fn=node_fn,
             update_global_fn=global_fn,
         )
 
-        graph = gcn1(graph)
-        graph = gcn2(graph)
-        graph = gat1(graph)
-        graph = gat2(graph)
-        graph = graph._replace(edges=graph.edges[:, None])
-        graph = gnn(graph)
+        pol_graph = pol_gcn1(graph)
+        pol_graph = pol_gcn2(pol_graph)
+        pol_graph = pol_gat1(pol_graph)
+        pol_graph = pol_gat2(pol_graph)
+        pol_graph = pol_graph._replace(edges=pol_graph.edges[:, None])
+        pol_graph = pol_gnn(pol_graph)
 
-        squeezed_globals = graph.globals.squeeze()
+        squeezed_globals = pol_graph.globals.squeeze()
         full_inf = jnp.full((self.action_dim,), -jnp.inf)
         masked_globals = jax.lax.select(mask, squeezed_globals, full_inf)
 
-        return distrax.Categorical(logits=masked_globals)
+        pi = distrax.Categorical(logits=masked_globals)
 
-
-class ValueNET_GAT(nn.Module):
-    gat1_output_dim: int
-    gat2_output_dim: int
-    gat2_nodes_output_dim: int
-
-    @nn.compact
-    def __call__(self, graph: jr.GraphsTuple) -> jnp.ndarray:
         # Two GCN layers
-        gcn1 = jr.GraphConvolution(
+        val_gcn1 = jr.GraphConvolution(
             update_node_fn=lambda n: jax.nn.relu(
                 make_embed_fn(self.gat1_output_dim)(n)
             ),
             add_self_edges=True,
         )
-        gcn2 = jr.GraphConvolution(
+        val_gcn2 = jr.GraphConvolution(
             update_node_fn=lambda n: jax.nn.relu(
                 make_embed_fn(self.gat2_output_dim)(n)
             ),
             add_self_edges=True,
         )
         # Two GAT layers
-        gat1 = jr.GAT(
+        val_gat1 = jr.GAT(
             attention_query_fn=lambda n: make_embed_fn(self.gat1_output_dim)(n),
             attention_logit_fn=_attention_logit_fn,
             node_update_fn=None,
         )
-        gat2 = jr.GAT(
+        val_gat2 = jr.GAT(
             attention_query_fn=lambda n: make_embed_fn(self.gat2_output_dim)(n),
             attention_logit_fn=_attention_logit_fn,
             node_update_fn=lambda n: make_embed_fn(self.gat2_nodes_output_dim)(n),
         )
         # Initialize globals to zero of shape [batch,1]
-        graph = graph._replace(globals=jnp.zeros((graph.globals.shape[0], 1)))
+        # graph = graph._replace(globals=jnp.zeros((graph.globals.shape[0], 1)))
 
-        @jr.concatenated_args
-        def edge_fn(attrs):
-            return jax.nn.relu(make_embed_fn(self.gat1_output_dim)(attrs))
-
-        @jr.concatenated_args
-        def node_fn(attrs):
-            return jax.nn.relu(make_embed_fn(self.gat1_output_dim)(attrs))
-
-        @jr.concatenated_args
-        def global_fn(attrs):
-            return jax.nn.relu(make_embed_fn(1)(attrs))
-
-        gnn = jr.GraphNetwork(
+        val_gnn = jr.GraphNetwork(
             update_edge_fn=edge_fn,
             update_node_fn=node_fn,
             update_global_fn=global_fn,
         )
 
-        graph = gcn1(graph)
-        graph = gcn2(graph)
-        graph = gat1(graph)
-        graph = gat2(graph)
-        graph = graph._replace(edges=graph.edges[:, None])
-        graph = gnn(graph)
+        val_graph = val_gcn1(graph)
+        val_graph = val_gcn2(val_graph)
+        val_graph = val_gat1(val_graph)
+        val_graph = val_gat2(val_graph)
+        val_graph = val_graph._replace(edges=val_graph.edges[:, None])
+        val_graph = val_gnn(val_graph)
 
         # Return shape [batch]
-        return graph.globals.squeeze()
+        val = val_graph.globals.squeeze()
+        return val, pi
 
 
 @partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode'))
@@ -291,9 +276,9 @@ def rollout(key_input, env: environment.Environment,
     return observations, actions, logps, rewards, dones, values, last_value, infos
 
 
-@partial(jax.jit, static_argnames=('pol_model', 'env', 'steps_in_episode'))
+@partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode'))
 def rollout_eval(key_input, env: environment.Environment,
-                 pol_model: nn.Module, ppo_state: PPOState,
+                 model: nn.Module, ppo_state: PPOState,
                  env_params: EnvParams, steps_in_episode: int):
     """Rollout a jitted gymnax episode with lax.scan."""
     # Reset the environment
@@ -304,7 +289,7 @@ def rollout_eval(key_input, env: environment.Environment,
         """lax.scan compatible step transition in jax env."""
         obs, state, key = state_input
         next_key, key_step, key_net = jax.random.split(key, 3)
-        action_distribution = pol_model.apply(ppo_state.policy_params, obs)
+        _, action_distribution = model.apply(ppo_state.params, obs)
         action = action_distribution.mode()
 
         next_obs, next_state, reward, done, infos = env.step(
@@ -468,6 +453,7 @@ def compute_avg_value(infos: dict[str, jax.Array]) -> dict[str, jax.Array]:
 def train_ppo(
         env: BlockchainEnv,
         model: nn.module,
+        create_params_fn: Callable[[jax.Array], TEnvParams],
         num_steps,
         num_envs,
         num_epochs,
@@ -482,15 +468,11 @@ def train_ppo(
 
     obs_key, pol_key, val_key, ppo_key = jax.random.split(key, 4)
 
-    default_params = env.default_params
-    action_range = env.action_space(default_params).n
-    sample_obs = env.observation_space(default_params).sample(obs_key)
-
-    first_obs, first_state = env.reset(obs_key,env.default_params)
+    first_obs, first_state = env.reset(obs_key, env.default_params)
 
     # Initialize with GraphsTuple
 
-    model_vars = model.init(obs_key, sample_obs)
+    model_vars = model.init(obs_key, first_obs)
 
     model_opt = optax.adam(lr)
     model_opt_state = model_opt.init(model_vars)
@@ -511,7 +493,7 @@ def train_ppo(
     vm_rollout = jax.vmap(single_rollout)
 
     params_map = jax.vmap(
-        lambda _: env.default_params,
+        lambda key_map: create_params_fn(key_map)  # Create new params for each env,
     )
 
     for epoch in range(num_epochs):
@@ -610,15 +592,12 @@ def eval_ppo_and_log(env: BlockchainEnv, model: nn.module, ppo_state: PPOState, 
     print(f"Eval over {num_episodes} eps: avg return={avg:.3f}")
 
 
-def eval_ppo(ppo_state: PPOState, env: BlockchainEnv, num_episodes: int = 10, key: Optional[jnp.ndarray] = None,
-             gat_1_out: int = 64, gat_2_out: int = 64, gat_2_nodes_out: int = 64):
+def eval_ppo(ppo_state: PPOState, env: BlockchainEnv, model: nn.Module, num_episodes: int = 10, key: Optional[jnp.ndarray] = None,):
     env_params = env.default_params
-    pol_net = PolicyNET_GAT(gat_1_out, gat_2_out, gat_2_nodes_out,
-                            env.action_space(env_params).n)
 
     @jax.jit
     def single_rollout(rng: jax.Array, new_param: EnvParams):
-        return rollout_eval(rng, env, pol_net, ppo_state, new_param, env.default_params.max_steps_in_episode)
+        return rollout_eval(rng, env, model, ppo_state, new_param, env.default_params.max_steps_in_episode)
 
     vm_rollouts = jax.vmap(single_rollout)
 
@@ -648,9 +627,11 @@ def eval_ppo(ppo_state: PPOState, env: BlockchainEnv, num_episodes: int = 10, ke
     return metrics
 
 
-def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: int, num_envs: int, batch_size: int,
-                lr: float, gamma: float, lambda_: float, clip_ratio: float, gat1_out: int, gat2_out: int,
-                gat2_nodes_out: int, normalize_rewards: bool = False, to_log: bool = False, sub_epoch: int = 0) -> \
+def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, model: nn.module, num_steps: int, num_envs: int,
+                create_params_fn: Callable[[jax.Array], TEnvParams],
+                batch_size: int,
+                model_opt: GradientTransformationExtraArgs, gamma: float, lambda_: float,
+                clip_ratio: float, normalize_rewards: bool = False, to_log: bool = False, sub_epoch: int = 0) -> \
         Tuple[PPOState, int]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
@@ -658,13 +639,9 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
     """
 
     # TODO normalization of rewards
-    if normalize_rewards:
+    if normalize_rewards and isinstance(env, BlockchainEnv):
         # If using normalization, ensure the environment is wrapped accordingly
         env = NormalizationWrapper(env)
-
-    action_dim = env.action_space(env.default_params).n
-    pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, action_dim)
-    val_net = ValueNET_GAT(gat1_out, gat2_out, gat2_nodes_out)
 
     # Vectorized rollout
     @jax.jit
@@ -672,8 +649,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
         return rollout(
             rng,
             env,
-            pol_net,
-            val_net,
+            model,
             ppo_state,
             new_param,
             num_steps,
@@ -682,8 +658,9 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
     vm_rollout = jax.vmap(single_rollout)
 
     params_map = jax.vmap(
-        lambda key_map: EnvParams.create_random(env.nb_nodes, key_map, env.default_params.nb_validators,
-                                                env.default_params.rewards_weights),
+        # lambda key_map: EnvParams.create_random(env.nb_nodes, key_map, env.default_params.nb_validators,
+        #                                        env.default_params.rewards_weights),
+        lambda key_map: create_params_fn(key_map)
     )
 
     # Split RNG keys for rollouts and parameter sampling
@@ -713,6 +690,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
         )
     )(rews, vals, dones, last_values)
     returns = advantages + vals
+    advantages_norm = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
     # Flatten data
     def flatten(x):
@@ -721,11 +699,10 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
     flat_a = flatten(acts)
     flat_lp = flatten(logps)
     flat_r = flatten(returns)
-    flat_adv = flatten(advantages)
-    flat_graphs = jax.tree.map(flatten, observations)
+    flat_adv = flatten(advantages_norm)
+    flat_val = flatten(vals)
 
-    pol_opt = optax.adam(lr)
-    val_opt = optax.adam(lr)
+    flat_graphs = jax.tree.map(flatten, observations)
 
     # Shuffle and minibatch updates
     perm = jax.random.permutation(perm_key, flat_a.shape[0])
@@ -740,10 +717,9 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: BlockchainEnv, num_steps: 
             flat_lp[idx],
             flat_r[idx],
             flat_adv[idx],
-            pol_net.apply,
-            val_net.apply,
-            pol_opt,
-            val_opt,
+            flat_val[idx],
+            model.apply,
+            model_opt,
             clip_ratio
         )
         info_train = {
@@ -795,9 +771,7 @@ def create_ppo_state(
         env: environment.Environment,
         seed: int,
         lr: float,
-        gat1_out: int,
-        gat2_out: int,
-        gat2_nodes_out: int
+        model: nn.Module,
 ) -> PPOState:
     """
     Initialize or restore a PPOState.  If `resume_dir` is provided, uses
@@ -805,6 +779,8 @@ def create_ppo_state(
     is True, reinitializes optimizer states with loaded network weights.
     Otherwise, does a fresh init.
     """
+    model_opt = optax.adam(lr)
+
     # --- restore path ---
     if resume_dir:
         step = checkpoint_manager.latest_step()
@@ -814,36 +790,18 @@ def create_ppo_state(
         state: PPOState = checkpoint_manager.restore(step)
         print(f"Loaded checkpoint from step {step}")
         if warm_start:
-            pol_opt = optax.adam(lr)
-            val_opt = optax.adam(lr)
             state = state.replace(
-                policy_opt_state=pol_opt.init(state.policy_params),
-                value_opt_state=val_opt.init(state.value_params)
+                policy_opt_state=model_opt.init(state.params),
+                value_opt_state=model_opt.init(state.params)
             )
             print("Optimizer states reinitialized for warm start.")
         return state
 
     # --- fresh initialization ---
     key = jax.random.PRNGKey(seed)
-    graph_key, act_key, pol_key, val_key = jax.random.split(key, 4)
-    dummy_graph = env.observation_space(env.default_params).sample(graph_key)
-
-    pol_net = PolicyNET_GAT(gat1_out, gat2_out, gat2_nodes_out, env.action_space(env.default_params).n)
-    val_net = ValueNET_GAT(gat1_out, gat2_out, gat2_nodes_out)
-
-    pol_vars = pol_net.init(pol_key, dummy_graph)
-    val_vars = val_net.init(val_key, dummy_graph)
-
-    pol_opt = optax.adam(lr)
-    val_opt = optax.adam(lr)
-    pol_opt_state = pol_opt.init(pol_vars)
-    val_opt_state = val_opt.init(val_vars)
-
+    obs_key, ppo_key, state_key = jax.random.split(key, 3)
+    first_obs, first_state = env.reset(obs_key, env.default_params)
+    model_vars = model.init(ppo_key, first_obs)
+    model_opt_state = model_opt.init(model_vars)
     print("Initialized new PPOState.")
-    return PPOState(
-        policy_params=pol_vars,
-        value_params=val_vars,
-        policy_opt_state=pol_opt_state,
-        value_opt_state=val_opt_state,
-        rng_key=key
-    )
+    return PPOState(model_vars, model_opt_state, ppo_key)
