@@ -4,15 +4,18 @@ from typing import Callable, Dict, Tuple, Any, List
 import flax.linen as nn
 import gymnax
 import jax
+import jax.numpy as jnp
+import wandb
 from gymnax.environments.environment import Environment, TEnvParams
 
 from rl_blockchain import BlockEnv
 from rl_blockchain.BlockEnv import StaticEnvParams, BlockchainEnv
-from rl_blockchain.algo.ppo import PPO_NET_GAT, CategoricalSeparateMLP
+from rl_blockchain.model import CategoricalSeparateMLP, PPO_NET_GAT
 from rl_blockchain.scripts.parser import REF_FILENAME
 
 # Type alias
-EnvInitOutput = Tuple[nn.Module, Environment, TEnvParams, Callable[[jax.Array], TEnvParams]]
+LOG_TYPE = Callable[[dict[str, jax.Array], jax.Array, jax.Array], dict[str, jax.Array]]
+EnvInitOutput = Tuple[nn.Module, Environment, TEnvParams, Callable[[jax.Array], TEnvParams], LOG_TYPE]
 
 
 class EnvBuilder(abc.ABC):
@@ -43,9 +46,38 @@ class EnvBuilder(abc.ABC):
         """
         return self.required_keys
 
+    @staticmethod
+    @abc.abstractmethod
+    def log(infos_env: dict[str, jax.Array], rews: jax.Array, dones: jax.Array) -> dict[str, jax.Array]:
+        """
+        Log environment-specific information.
+        """
+        pass
+
+
+def compute_avg_value(infos: dict[str, jax.Array]) -> dict[str, jax.Array]:
+    infos_keys = ["gini", "distance", "gini_reward", "distance_reward"]
+    list_is_inner: jax.Array = infos["action_taken"] == -1
+    sum_inner = list_is_inner.sum()
+    returned_infos = {}
+    for key in infos_keys:
+        returned_infos[key] = ((infos[key] * list_is_inner).sum() / sum_inner).item()
+    return returned_infos
+
 
 class BlockchainEnvBuilder(EnvBuilder):
     required_keys = ["n_nodes", "gat_arch", "voting_nodes", "reward_weights"]
+
+    @staticmethod
+    def log(infos_env: dict[str, jax.Array], rews: jax.Array, dones: jax.Array) -> dict[str, jax.Array]:
+        infos_env_refined = compute_avg_value(infos_env)
+        total_rewards = rews.sum()
+        total_dones = dones.sum()
+        infos_env_refined["avg_rewards"] = jnp.mean(rews)
+        infos_env_refined["nb_sequences_done"] = total_dones
+        infos_env_refined["reward_mean_per_episode"] = total_rewards / total_dones if total_dones > 0 else 0
+        return infos_env_refined
+
 
     def build(self, key_param: jax.Array, config: Dict[str, Any]) -> EnvInitOutput:
         self.validate_config(config)
@@ -64,17 +96,26 @@ class BlockchainEnvBuilder(EnvBuilder):
         env = BlockchainEnv(env_params, static_params)
         model = PPO_NET_GAT(gat1_out, gat2_out, gat2_nodes_out, env.num_actions)
 
-        return model, env, env_params, create_params_fn
+        return model, env, env_params, create_params_fn, self.__class__.log
 
 
 class CartPoleEnvBuilder(EnvBuilder):
+
+    @staticmethod
+    def log(infos_env: dict[str, jax.Array], rews: jax.Array, dones: jax.Array) -> dict[str, jax.Array]:
+        total_rewards = rews.sum()
+        total_dones = dones.sum()
+        reward_mean_per_episode = total_rewards / total_dones if total_dones > 0 else 0
+
+        return {"reward_mean_per_episode": reward_mean_per_episode, "nb_sequences_done": jnp.sum(dones)}
+
     def build(self, key_param: jax.Array, config: Dict[str, Any]) -> EnvInitOutput:
         self.validate_config(config)
         env, env_params = gymnax.make("CartPole-v1")
         model = CategoricalSeparateMLP(env.num_actions, 64, 2)
         create_params_fn = lambda key: env_params
 
-        return model, env, env_params, create_params_fn
+        return model, env, env_params, create_params_fn, self.__class__.log
 
 
 class GenericEnvFactory:

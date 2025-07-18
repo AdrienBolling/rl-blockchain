@@ -1,6 +1,5 @@
 import logging
 import re
-import string
 from argparse import Namespace
 
 import jax
@@ -10,7 +9,7 @@ import wandb
 from tqdm import tqdm
 
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch
-from rl_blockchain.algo.ppo import eval_ppo as ev_ppo
+from rl_blockchain.algo.ppo import eval_ppo
 from rl_blockchain.scripts.env_factory import GenericEnvFactory
 
 logger = logging.getLogger(__name__)
@@ -41,16 +40,17 @@ def train_ppo(ARGS: Namespace):
 
     sub_epoch = 0
 
-    env_name =  ARGS.env.lowercase()
+    env_name = ARGS.env.lower()
     if env_name == "blockchain":
         config = {"n_nodes": ARGS.n_nodes, "gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
                   "reward_weights": ARGS.reward_weights}
-        model, env, first_param, create_params_fn = GenericEnvFactory.create("blockchain", key_param, config)
+        model, env, first_param, create_params_fn, log_fn = GenericEnvFactory.create("blockchain", key_param, config)
     elif env_name == "cartpole":
         config = {}
-        model, env, first_param, create_params_fn = GenericEnvFactory.create("cartpole", key_param, config)
+        model, env, first_param, create_params_fn, log_fn = GenericEnvFactory.create("cartpole", key_param, config)
     else:
-        raise ValueError(f"Unknown environment: {env_name}. Available environments: {GenericEnvFactory.available_environments()}")
+        raise ValueError(
+            f"Unknown environment: {env_name}. Available environments: {GenericEnvFactory.available_environments()}")
 
     # If we need to resume a training, get the name of the checkpoint
     chkpt_name = ARGS.checkpoint
@@ -105,18 +105,19 @@ def train_ppo(ARGS: Namespace):
                                            create_params_fn=create_params_fn,
                                            num_steps=num_steps,
                                            num_envs=num_envs, batch_size=batch_size, gamma=gamma,
-                                           lambda_=lambda_, clip_ratio=clip_ratio, sub_epoch=sub_epoch, to_log=True,
+                                           lambda_=lambda_, clip_ratio=clip_ratio, sub_epoch=sub_epoch, log_fn=log_fn,
                                            normalize_rewards=True)
         key, subkey = jax.random.split(key)
         if epoch % ARGS.eval_interval == 0:
             logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")
             # Evaluate the PPO agent
-            metrics = ev_ppo(
+            metrics = eval_ppo(
                 ppo_state=ppo_state,
                 env=env,
                 model=model,
+                create_params_fn=create_params_fn,
                 num_episodes=ARGS.eval_episodes,
-                key=subkey,
+                log_fn=log_fn
             )
 
             wandb.log({"eval": metrics}, step=sub_epoch)
@@ -127,6 +128,3 @@ def train_ppo(ARGS: Namespace):
         # logger.info(f"Epoch {epoch} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
     wandb.finish()
 
-
-def eval_ppo():
-    pass

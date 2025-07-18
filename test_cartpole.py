@@ -3,7 +3,8 @@ import jax
 import jax.numpy as jnp
 
 from rl_blockchain.BlockEnv import create_rd_adj_matrix, EnvParams, BlockchainEnv, StaticEnvParams
-from rl_blockchain.algo.ppo import train_ppo, eval_ppo_and_log, CategoricalSeparateMLP
+from rl_blockchain.algo.ppo import train_ppo, eval_ppo_and_log
+from rl_blockchain.model import CategoricalSeparateMLP
 
 
 def main():
