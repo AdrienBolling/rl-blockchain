@@ -140,8 +140,9 @@ def _parse_args() -> Namespace:
     )
     train_parser.add_argument(
         "--learning-rate",
+        nargs="+",
         type=float,
-        default=0.0003,
+        default=[0.0003],
         help="Learning rate for the optimizer. Default is 0.0003.",
     )
     train_parser.add_argument(
@@ -158,9 +159,23 @@ def _parse_args() -> Namespace:
     )
     train_parser.add_argument(
         "--clip-ratio",
+        nargs="+",
         type=float,
-        default=0.2,
+        default=[0.2],
         help="PPO clip ratio. Default is 0.2.",
+    )
+    train_parser.add_argument(
+        "--value-coef",
+        type=float,
+        default=0.5,
+        help="Coefficient for the value function loss. Default is 0.5.",
+    )
+    train_parser.add_argument(
+        "--entropy-coef",
+        nargs="+",
+        type=float,
+        default=[0.01],
+        help="Coefficient for the entropy loss. Default is 0.01.",
     )
     train_parser.add_argument(
         "--reward-weights",

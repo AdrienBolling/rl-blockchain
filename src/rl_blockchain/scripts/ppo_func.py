@@ -1,6 +1,7 @@
 import logging
 import re
 from argparse import Namespace
+from typing import Callable
 
 import jax
 import optax
@@ -13,6 +14,16 @@ from rl_blockchain.algo.ppo import eval_ppo
 from rl_blockchain.scripts.env_factory import GenericEnvFactory
 
 logger = logging.getLogger(__name__)
+
+
+def make_fct_value(inputs: list[float], nb_step: int) -> Callable[[int], float]:
+    if len(inputs) == 1:
+        return lambda _: inputs[0]
+    elif len(inputs) == 2:
+        init = inputs[0]
+        last_value = inputs[1]
+        return lambda x: init + (last_value - init) * (x / (nb_step - 1))
+    raise ValueError("Unexpected number of inputs: {}, must be 1 or 2".format(len(inputs)))
 
 
 def train_ppo(ARGS: Namespace):
@@ -30,10 +41,12 @@ def train_ppo(ARGS: Namespace):
     num_envs = ARGS.num_envs
     num_epochs = ARGS.num_epochs
     batch_size = ARGS.batch_size
-    lr = ARGS.learning_rate
+    lr_fn = make_fct_value(ARGS.learning_rate, num_epochs)
     gamma = ARGS.gamma
     lambda_ = ARGS.lambda_
-    clip_ratio = ARGS.clip_ratio
+    clip_ratio_fn = make_fct_value(ARGS.clip_ratio, num_epochs)
+    value_coef = ARGS.value_coef
+    entropy_coef_fn = make_fct_value(ARGS.entropy_coef, num_epochs)
     key = jax.random.PRNGKey(ARGS.seed)
     key, key_param = jax.random.split(key)
     # Create environment parameters
@@ -90,21 +103,22 @@ def train_ppo(ARGS: Namespace):
         warm_start=ARGS.warm_start,
         env=env,
         seed=ARGS.seed,
-        lr=lr,
+        lr=lr_fn(0),
         model=model
     )
 
-    model_opt = optax.adam(lr)
-
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
+        model_opt = optax.adam(lr_fn(epoch))
         # Train for one epoch
         logger.info(f"Epoch {epoch + 1}/{num_epochs}")
         ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env, model_opt=model_opt, model=model,
                                            create_params_fn=create_params_fn,
                                            num_steps=num_steps,
                                            num_envs=num_envs, batch_size=batch_size, gamma=gamma,
-                                           lambda_=lambda_, clip_ratio=clip_ratio, sub_epoch=sub_epoch, log_fn=log_fn,
+                                           lambda_=lambda_, clip_ratio=clip_ratio_fn(epoch),
+                                           value_coef=value_coef, entropy_coef=entropy_coef_fn(epoch),
+                                           sub_epoch=sub_epoch, log_fn=log_fn,
                                            normalize_rewards=True)
         key, subkey = jax.random.split(key)
         if epoch % ARGS.eval_interval == 0:
@@ -126,4 +140,3 @@ def train_ppo(ARGS: Namespace):
         checkpoint_manager.save(step=epoch, args=ocp.args.StandardSave(ppo_state))
         # logger.info(f"Epoch {epoch} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
     wandb.finish()
-

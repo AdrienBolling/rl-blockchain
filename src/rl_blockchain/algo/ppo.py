@@ -392,8 +392,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
                 batch_size: int,
                 model_opt: GradientTransformationExtraArgs, gamma: float, lambda_: float,
                 clip_ratio: float, normalize_rewards: bool = False, log_fn: LOG_TYPE = None,
-                sub_epoch: int = 0) -> \
-        Tuple[PPOState, int]:
+                sub_epoch: int = 0, value_coef: float = 0.5, entropy_coef: float = 0.01, ) -> Tuple[PPOState, int]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
@@ -480,7 +479,8 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
             flat_val[idx],
             model.apply,
             model_opt,
-            clip_ratio
+            clip_ratio,
+            value_coef, entropy_coef
         )
         info_train = {
             "policy_loss": policy_loss,
@@ -582,8 +582,7 @@ def create_ppo_state(
         print(f"Loaded checkpoint from step {step}")
         if warm_start:
             state = state.replace(
-                policy_opt_state=model_opt.init(state.params),
-                value_opt_state=model_opt.init(state.params)
+                opt_state=model_opt.init(state.params),
             )
             print("Optimizer states reinitialized for warm start.")
         return state
