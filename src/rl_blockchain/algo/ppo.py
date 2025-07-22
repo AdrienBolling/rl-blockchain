@@ -13,7 +13,7 @@ import wandb
 from flax import struct
 from gymnax.environments import environment
 from gymnax.environments.environment import TEnvParams
-from matplotlib.path import Path
+from pathlib import Path
 from optax._src.base import GradientTransformationExtraArgs
 
 from rl_blockchain.BlockEnv import EnvParams
@@ -595,3 +595,23 @@ def create_ppo_state(
     model_opt_state = model_opt.init(model_vars)
     print("Initialized new PPOState.")
     return PPOState(model_vars, model_opt_state, ppo_key)
+
+
+def load_ppo_state(resume_dir: Path, key:jax.Array) -> PPOState:
+    """
+    Load a PPOState from a checkpoint or initialize a new one.
+    """
+    checkpoint_manager = create_checkpoint_manager(resume_dir.absolute())
+    step = checkpoint_manager.latest_step()
+    if step is None:
+        raise ValueError(f"No checkpoints found in {resume_dir}")
+    # restore the entire PPOState PYTree
+    restored_state = checkpoint_manager.restore(step)
+    state = PPOState(
+        params=restored_state["params"],
+        opt_state=None,
+        rng_key=key
+    )
+    print(type(state))
+    print(f"Loaded checkpoint from step {step}")
+    return state

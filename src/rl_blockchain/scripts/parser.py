@@ -1,4 +1,5 @@
 import os
+import pathlib
 from argparse import ArgumentParser, Namespace
 
 REF_FILENAME = {
@@ -110,6 +111,32 @@ def _parse_args() -> Namespace:
 
     #### PPO Subparser ####
     ppo_parser = algo_subparser.add_parser("ppo", help="PPO algorithm.")
+
+    ppo_parser.add_argument(
+        "--reward-weights",
+        nargs="+",
+        type=float,
+        default=[0.5, 0.5],
+        help="Weights for the rewards as space separated values. Default is [0.5, 0.5].",
+    )
+    ppo_parser.add_argument(
+        "--gat-arch",
+        nargs="+",
+        type=int,
+        default=[64, 64, 64],
+        help="GAT architecture as three space separated values. Default is [64, 64, 64].",
+    )
+
+    ppo_parser.add_argument(
+        "--eval-episodes",
+        type=int,
+        default=10,
+        help="Number of episodes to run for evaluation. Default is 10.",
+    )
+
+
+
+
     mode_subparsers = ppo_parser.add_subparsers(dest="mode", required=True)
     # Add a subparser for the 'train' mode
     train_parser = mode_subparsers.add_parser("train", help="Train the PPO agent.")
@@ -178,20 +205,6 @@ def _parse_args() -> Namespace:
         help="Coefficient for the entropy loss. Default is 0.01.",
     )
     train_parser.add_argument(
-        "--reward-weights",
-        nargs="+",
-        type=float,
-        default=[0.5, 0.5],
-        help="Weights for the rewards as space separated values (e.g: 0.5 0.5). Default is [0.5, 0.5].",
-    )
-    train_parser.add_argument(
-        "--gat-arch",
-        nargs="+",
-        type=int,
-        default=[64, 64, 64],
-        help="GAT architecture as three space separated values (e.g: 64 64 64). Default is [64, 64, 64].",
-    )
-    train_parser.add_argument(
         "--checkpoint",
         type=str,
         default=None,
@@ -211,11 +224,13 @@ def _parse_args() -> Namespace:
         default=10,
         help="Interval (in epochs) to evaluate the agent during training. Default is 10.",
     )
-    train_parser.add_argument(
-        "--eval-episodes",
-        type=int,
-        default=5,
-        help="Number of episodes to run for evaluation. Default is 10.",
+
+    eval_parser = mode_subparsers.add_parser("eval", help="Eval the PPO agent.")
+
+    eval_parser.add_argument(
+        "chkpt_dir",
+        type=pathlib.Path,
+        help="Directory to load the checkpoint from.",
     )
 
     return parser.parse_args()

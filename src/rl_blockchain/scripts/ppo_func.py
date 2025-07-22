@@ -1,4 +1,5 @@
 import logging
+import pathlib
 import re
 from argparse import Namespace
 from typing import Callable
@@ -9,7 +10,7 @@ import orbax.checkpoint as ocp
 import wandb
 from tqdm import tqdm
 
-from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch
+from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch, load_ppo_state
 from rl_blockchain.algo.ppo import eval_ppo
 from rl_blockchain.scripts.env_factory import GenericEnvFactory
 
@@ -53,16 +54,7 @@ def train_ppo(ARGS: Namespace):
 
     sub_epoch = 0
 
-    env_name = ARGS.env.lower()
-    if env_name == "blockenv":
-        config = {"n_nodes": ARGS.n_nodes, "gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
-                  "reward_weights": ARGS.reward_weights}
-    elif env_name == "cartpole":
-        config = {}
-    else:
-        raise ValueError(
-            f"Unknown environment: {env_name}. Available environments: {GenericEnvFactory.available_environments()}")
-    model, env, first_param, create_params_fn, log_fn = GenericEnvFactory.create(env_name, key_param, config)
+    model, env, create_params_fn, log_fn = get_env_config(ARGS, key_param)
 
     # If we need to resume a training, get the name of the checkpoint
     chkpt_name = ARGS.checkpoint
@@ -140,3 +132,43 @@ def train_ppo(ARGS: Namespace):
         checkpoint_manager.save(step=epoch, args=ocp.args.StandardSave(ppo_state))
         # logger.info(f"Epoch {epoch} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
     wandb.finish()
+
+
+def get_env_config(ARGS: Namespace, key_param: jax.Array):
+    env_name = ARGS.env.lower()
+    if env_name == "blockenv":
+        config = {"n_nodes": ARGS.n_nodes, "gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
+                  "reward_weights": ARGS.reward_weights}
+    elif env_name == "cartpole":
+        config = {}
+    else:
+        raise ValueError(
+            f"Unknown environment: {env_name}. Available environments: {GenericEnvFactory.available_environments()}")
+    model, env, _, create_params_fn, log_fn = GenericEnvFactory.create(env_name, key_param, config)
+    return model, env, create_params_fn, log_fn
+
+
+def eval_ppo_run(args: Namespace):
+    key = jax.random.PRNGKey(args.seed)
+    key, state_key, key_param = jax.random.split(key, 3)
+
+    model, env, create_params_fn, log_fn = get_env_config(args, key_param)
+
+    chkpt_dir :pathlib.Path= args.chkpt_dir
+    chkpt_dir.absolute()
+    print(type(chkpt_dir), chkpt_dir.absolute())
+
+    ppo_state = load_ppo_state(        chkpt_dir, key    )
+
+    # Evaluate the PPO agent
+    metrics = eval_ppo(
+        ppo_state=ppo_state,
+        env=env,
+        model=model,
+        create_params_fn=create_params_fn,
+        num_episodes=args.eval_episodes,
+        log_fn=log_fn
+    )
+
+    logger.info(metrics)
+    print(metrics)
