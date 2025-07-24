@@ -224,6 +224,13 @@ def _parse_args() -> Namespace:
         help="Interval (in epochs) to evaluate the agent during training. Default is 10.",
     )
 
+    train_parser.add_argument(
+        "--no-norm-advantages",
+        action="store_true",
+        default=False,
+        help="If True, normalize the advantages during training. Default is False.",
+    )
+
     eval_parser = mode_subparsers.add_parser("eval", help="Eval the PPO agent.")
 
     eval_parser.add_argument(

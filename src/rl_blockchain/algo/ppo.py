@@ -1,6 +1,7 @@
 import logging
 import os
 from functools import partial
+from pathlib import Path
 from typing import Optional, Tuple, Union, Any, Callable
 
 import flax.linen as nn
@@ -13,7 +14,6 @@ import wandb
 from flax import struct
 from gymnax.environments import environment
 from gymnax.environments.environment import TEnvParams
-from pathlib import Path
 from optax._src.base import GradientTransformationExtraArgs
 
 from rl_blockchain.BlockEnv import EnvParams
@@ -140,7 +140,7 @@ def update_ppo(
         clip_ratio: float = 0.2,
         value_coef: float = 0.5,
         entropy_coef: float = 0.01
-) -> tuple[PPOState, float, float, float, dict[str, Any]]:
+) -> tuple[PPOState, float, float, float, float, float, dict[str, Any]]:
     """
     Performs a PPO update over a batch of transitions.
 
@@ -190,13 +190,17 @@ def update_ppo(
             value_loss = jnp.maximum(value_loss, value_loss_clipped)
 
             total_loss = policy_loss + value_coef * value_loss - entropy * entropy_coef
-            return total_loss, (policy_loss, value_loss, entropy)
+
+            approx_kl = ratio - 1.0 - (new_lp - old_lp)
+            is_clipped = (jnp.abs(ratio - 1.0) > clip_ratio).astype(jnp.float32)
+
+            return total_loss, (policy_loss, value_loss, entropy, approx_kl, is_clipped)
 
         # Vectorize over batch
-        total_loss, (pl_batch, vl_batch, ent_batch) = jax.vmap(
+        total_loss, (pl_batch, vl_batch, ent_batch, kl_batch, cf_batch) = jax.vmap(
             sample_loss,
             in_axes=(None, 0, 0, 0, 0, 0, 0),
-            out_axes=(0, (0, 0, 0))
+            out_axes=(0, (0, 0, 0, 0, 0))
         )(
             model_params,
             observation,
@@ -211,11 +215,13 @@ def update_ppo(
         mean_pl_batch = jnp.mean(pl_batch)
         mean_vl_batch = jnp.mean(vl_batch)
         mean_ent_batch = jnp.mean(ent_batch)
+        mean_kl_batch = jnp.mean(kl_batch)
+        mean_cf_batch = jnp.mean(cf_batch)
         # return mean total_loss as loss, and policy/value losses as aux
-        return mean_loss, (mean_pl_batch, mean_vl_batch, mean_ent_batch)
+        return mean_loss, (mean_pl_batch, mean_vl_batch, mean_ent_batch, mean_kl_batch, mean_cf_batch)
 
     # Compute gradients
-    (loss_val, (mean_pl, mean_vl, mean_ent)), grads = jax.value_and_grad(
+    (loss_val, (mean_pl, mean_vl, mean_ent, mean_kl, mean_cf)), grads = jax.value_and_grad(
         loss_fn, has_aux=True
     )(ppo_state.params)
 
@@ -223,15 +229,11 @@ def update_ppo(
         grads, ppo_state.opt_state
     )
 
-    new_model_params = optax.apply_updates(ppo_state.params, model_updates)
+    new_model_params: dict = optax.apply_updates(ppo_state.params, model_updates)
 
-    # Construct new state
-    new_state = ppo_state.replace(
-        params=new_model_params,
-        opt_state=new_model_opt_state,
-    )
+    new_state = PPOState(new_model_params, new_model_opt_state, ppo_state.rng_key)
 
-    return new_state, mean_pl, mean_vl, mean_ent, info_coef
+    return new_state, mean_pl, mean_vl, mean_ent, mean_kl, mean_cf, info_coef
 
 
 def compute_avg_value(infos: dict[str, jax.Array]) -> dict[str, jax.Array]:
@@ -338,7 +340,7 @@ def train_ppo(
             batch_graphs = jax.tree.map(lambda x: x[batch_idx], flat_graphs)
 
             # Now call update_ppo with the exact signature you defined:
-            ppo_state, policy_loss, value_loss, entropy, info_coef = update_ppo(
+            ppo_state, policy_loss, value_loss, entropy, approx_kl, clip_frac, info_coef = update_ppo(
                 ppo_state,
                 batch_graphs,  # env_states: a GraphsTuple PyTree
                 flat_a[batch_idx],  # actions
@@ -353,7 +355,7 @@ def train_ppo(
         v, pi = model.apply(ppo_state.params, first_obs)
         print(f"Policy: {pi.logits}, Value: {v}")
         ppo_state = ppo_state.replace(rng_key=new_ppo_key)
-        print(f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}, Entropy={entropy:.3f}")
+        print(f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}, Entropy={entropy:.3f}, approxKL={approx_kl:.3f}, clipFract={clip_frac:.3f}, info_coef={info_coef}")
         print(f"rewards : {rews.sum():.3f}, longueur {rews.shape}, dones {dones.sum():.3f}")
         # print("Infos -> ", infos)
         # string_builder = ""
@@ -392,7 +394,8 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
                 batch_size: int,
                 model_opt: GradientTransformationExtraArgs, gamma: float, lambda_: float,
                 clip_ratio: float, normalize_rewards: bool = False, log_fn: LOG_TYPE = None,
-                sub_epoch: int = 0, value_coef: float = 0.5, entropy_coef: float = 0.01, ) -> Tuple[PPOState, int]:
+                sub_epoch: int = 0, value_coef: float = 0.5, entropy_coef: float = 0.01,
+                norm_advantage: bool = False) -> Tuple[PPOState, int]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
@@ -449,7 +452,10 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
         )
     )(rews, vals, dones, last_values)
     returns = advantages + vals
-    advantages_norm = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+    if norm_advantage:
+        advantages_norm = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+    else:
+        advantages_norm = advantages
 
     # Flatten data
     def flatten(x):
@@ -469,7 +475,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
         logger.info(f"Epoch {epoch}: Processing batch {start // batch_size + 1} / {perm.shape[0] // batch_size + 1}")
         idx = perm[start: start + batch_size]
         batch_graphs = jax.tree.map(lambda x: x[idx], flat_graphs)
-        ppo_state, policy_loss, value_loss, entropy, info_coef = update_ppo(
+        ppo_state, policy_loss, value_loss, entropy, approx_kl, clip_fract, info_coef = update_ppo(
             ppo_state,
             batch_graphs,
             flat_a[idx],
@@ -480,12 +486,15 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
             model.apply,
             model_opt,
             clip_ratio,
-            value_coef, entropy_coef
+            value_coef,
+            entropy_coef
         )
         info_train = {
             "policy_loss": policy_loss,
             "value_loss": value_loss,
             "entropy": entropy,
+            "approx_kl": approx_kl,
+            "clip_fract": clip_fract,
         }
         if log_fn is not None:
             wandb.log({"coef": info_coef, "train": info_train, "epoch": epoch}, step=sub_epoch)
@@ -597,7 +606,7 @@ def create_ppo_state(
     return PPOState(model_vars, model_opt_state, ppo_key)
 
 
-def load_ppo_state(resume_dir: Path, key:jax.Array) -> PPOState:
+def load_ppo_state(resume_dir: Path, key: jax.Array) -> PPOState:
     """
     Load a PPOState from a checkpoint or initialize a new one.
     """

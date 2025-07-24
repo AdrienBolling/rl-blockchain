@@ -45,6 +45,7 @@ def train_ppo(ARGS: Namespace):
     lr_fn = make_fct_value(ARGS.learning_rate, num_epochs)
     gamma = ARGS.gamma
     lambda_ = ARGS.lambda_
+    norm_advantages = not ARGS.no_norm_advantages
     clip_ratio_fn = make_fct_value(ARGS.clip_ratio, num_epochs)
     value_coef = ARGS.value_coef
     entropy_coef_fn = make_fct_value(ARGS.entropy_coef, num_epochs)
@@ -113,7 +114,7 @@ def train_ppo(ARGS: Namespace):
                                            lambda_=lambda_, clip_ratio=clip_ratio_fn(epoch),
                                            value_coef=value_coef, entropy_coef=entropy_coef_fn(epoch),
                                            sub_epoch=sub_epoch, log_fn=log_fn,
-                                           normalize_rewards=True)
+                                           normalize_rewards=True, norm_advantage=norm_advantages)
         key, _ = jax.random.split(key)
         if epoch % ARGS.eval_interval == 0:
             logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")
