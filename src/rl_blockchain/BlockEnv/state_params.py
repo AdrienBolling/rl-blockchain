@@ -7,7 +7,7 @@ import jraph
 from flax import struct
 from gymnax.environments import environment
 
-from rl_blockchain.BlockEnv.BlockchainGraph import create_jraph_from_adj_matrix, create_rd_adj_matrix
+from rl_blockchain.BlockEnv.BlockchainGraph import create_jraph_from_adj_matrix, create_rd_adj_matrix, normalize_max
 
 node_features_dict = {
     "node_id": 0,
@@ -135,9 +135,11 @@ class EnvParams(environment.EnvParams):
             rewards_weights = [1, 1]
         rewards_weights_jnp = jnp.array(rewards_weights, dtype=jnp.float32)
 
+        norm_adj_matrix = normalize_max(adj_network_graph)
+
         return cls(
-            network_graph=create_jraph_from_adj_matrix(adj_network_graph),
-            adj_matrix=adj_network_graph,
+            network_graph=create_jraph_from_adj_matrix(norm_adj_matrix),
+            adj_matrix=norm_adj_matrix,
             nb_validators=nb_validators,
             rewards_weights=rewards_weights_jnp / rewards_weights_jnp.sum(),
             max_steps_in_episode=1000,

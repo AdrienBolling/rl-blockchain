@@ -99,6 +99,8 @@ def train_ppo(ARGS: Namespace):
         model=model
     )
 
+    key, key_eval = jax.random.split(key)
+
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
         model_opt = optax.adam(lr_fn(epoch))
@@ -112,12 +114,13 @@ def train_ppo(ARGS: Namespace):
                                            value_coef=value_coef, entropy_coef=entropy_coef_fn(epoch),
                                            sub_epoch=sub_epoch, log_fn=log_fn,
                                            normalize_rewards=True)
-        key, subkey = jax.random.split(key)
+        key, _ = jax.random.split(key)
         if epoch % ARGS.eval_interval == 0:
             logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")
             # Evaluate the PPO agent
             metrics = eval_ppo(
                 ppo_state=ppo_state,
+                key=key_eval,
                 env=env,
                 model=model,
                 create_params_fn=create_params_fn,

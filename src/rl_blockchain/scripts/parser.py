@@ -3,6 +3,8 @@ import pathlib
 from argparse import ArgumentParser, Namespace
 
 REF_FILENAME = {
+    7: "ref_grid_min_max/grid_7.csv",
+    10: "ref_grid_min_max/grid_10.csv",
     25: "ref_grid_min_max/grid_25.csv",
 }
 
@@ -133,9 +135,6 @@ def _parse_args() -> Namespace:
         default=10,
         help="Number of episodes to run for evaluation. Default is 10.",
     )
-
-
-
 
     mode_subparsers = ppo_parser.add_subparsers(dest="mode", required=True)
     # Add a subparser for the 'train' mode

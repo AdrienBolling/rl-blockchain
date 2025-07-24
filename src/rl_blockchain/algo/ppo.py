@@ -523,7 +523,7 @@ def create_checkpoint_manager(
     return manager
 
 
-def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module,
+def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module, key: jax.Array,
              create_params_fn: Callable[[jax.Array], TEnvParams], num_episodes: int = 10, log_fn: LOG_TYPE = None):
     @jax.jit
     def single_rollout(rng: jax.Array, new_param: EnvParams):
@@ -536,7 +536,7 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
     )
 
     # RNG split
-    rollout_key, params_key = jax.random.split(ppo_state.rng_key)
+    rollout_key, params_key = jax.random.split(key)
     subkeys = jax.random.split(rollout_key, num_episodes)
     subkeys_params = jax.random.split(params_key, num_episodes)
 
