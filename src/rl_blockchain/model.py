@@ -84,6 +84,7 @@ class CategoricalSeparateMLP(nn.Module):
 
 def make_embed_fn(latent_size):
     sequential_layer = nn.Sequential([
+        nn.LayerNorm(),
         nn.Dense(latent_size),
         nn.relu,
         nn.Dense(latent_size),
@@ -101,6 +102,7 @@ def make_attention_logit_fn(latent_size):
         nn.LayerNorm(),
         nn.Dense(latent_size),
         nn.relu,
+        nn.Dense(latent_size)
     ])
 
     @jr.concatenated_args
@@ -140,41 +142,64 @@ class PPO_NET_GAT(nn.Module):
                                    )
 
         net_gnn_val = jr.GraphNetwork(
-            update_edge_fn=make_embed_fn(3),
+            update_edge_fn=make_embed_fn(10),
             update_node_fn=make_embed_fn(self.gat2_nodes_output_dim),
-            update_global_fn=None,
+            update_global_fn=make_embed_fn(self.gat2_nodes_output_dim),
         )
 
         net_last_gnn_val = jr.GraphNetwork(
             update_edge_fn=None,
-            update_node_fn=None,
-            update_global_fn=make_embed_fn(1),
+            update_node_fn=make_embed_fn(self.gat2_nodes_output_dim),
+            update_global_fn=make_embed_fn(self.gat2_nodes_output_dim),
         )
 
+        net_last_MLP_val = nn.Sequential([
+            nn.LayerNorm(),
+            nn.Dense(self.gat2_nodes_output_dim, bias_init=default_mlp_init()),
+            nn.relu,
+            nn.Dense(1, bias_init=default_mlp_init()),
+        ])
+
         net_gnn_pol = jr.GraphNetwork(
-            update_edge_fn=make_embed_fn(3),
+            update_edge_fn=make_embed_fn(10),
             update_node_fn=make_embed_fn(self.gat2_nodes_output_dim),
             update_global_fn=None,
         )
 
         net_last_gnn_pol = jr.GraphNetwork(
             update_edge_fn=None,
-            update_node_fn=make_embed_fn(1),
-            update_global_fn=make_embed_fn(1),
+            update_node_fn=make_embed_fn(self.gat2_nodes_output_dim),
+            update_global_fn=make_embed_fn(self.gat2_nodes_output_dim),
         )
+
+        net_last_MLP_pol = nn.Sequential([
+            nn.LayerNorm(),
+            nn.Dense(self.gat2_nodes_output_dim, bias_init=default_mlp_init()),
+            nn.relu,
+            nn.Dense(self.action_dim, bias_init=default_mlp_init()),
+        ])
 
         graph_1 = net_gat_1(graph)
         graph_2 = net_gat_2(graph_1)
 
         val_graph_3 = net_gnn_val(graph_2)
         val_graph_4 = net_last_gnn_val(val_graph_3)
-        val = jnp.squeeze(val_graph_4.globals)
+        val_concat = jnp.concat([val_graph_4.globals, val_graph_4.nodes], axis=0)
+        val_concat = val_concat.reshape(-1)
+        last_val = net_last_MLP_val(val_concat)
+        val = last_val.squeeze()
 
         pol_graph_3 = net_gnn_pol(graph_2)
         pol_graph_4 = net_last_gnn_pol(pol_graph_3)
 
-        pol = jnp.concat([pol_graph_4.globals, pol_graph_4.nodes])
-        squeezed_globals = pol.squeeze()
+        pol_concat = jnp.concat([pol_graph_4.globals, pol_graph_4.nodes], axis=0)
+        pol_concat = pol_concat.reshape(-1)
+        # jax.debug.print("pol_concat shape: {shape}", shape=pol_concat.shape)
+        last_pol = net_last_MLP_pol(pol_concat)
+        # jax.debug.print("last_pol shape: {shape}", shape=last_pol.shape)
+
+        squeezed_globals = last_pol.squeeze()
+        # jax.debug.print("squeezed_globals shape: {shape}", shape=squeezed_globals.shape)
         full_inf = jnp.full((self.action_dim,), -jnp.inf)
         masked_globals = jax.lax.select(mask, squeezed_globals, full_inf)
 
