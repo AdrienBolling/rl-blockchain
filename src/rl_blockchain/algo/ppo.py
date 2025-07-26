@@ -355,7 +355,8 @@ def train_ppo(
         v, pi = model.apply(ppo_state.params, first_obs)
         print(f"Policy: {pi.logits}, Value: {v}")
         ppo_state = ppo_state.replace(rng_key=new_ppo_key)
-        print(f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}, Entropy={entropy:.3f}, approxKL={approx_kl:.3f}, clipFract={clip_frac:.3f}, info_coef={info_coef}")
+        print(
+            f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}, Entropy={entropy:.3f}, approxKL={approx_kl:.3f}, clipFract={clip_frac:.3f}, info_coef={info_coef}")
         print(f"rewards : {rews.sum():.3f}, longueur {rews.shape}, dones {dones.sum():.3f}")
         # print("Infos -> ", infos)
         # string_builder = ""
@@ -564,15 +565,8 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
 
 
 # Modified create_ppo_state to use the manager
-def create_ppo_state(
-        checkpoint_manager: ocp.CheckpointManager,
-        resume_dir: Optional[Path],
-        warm_start: bool,
-        env: environment.Environment,
-        seed: int,
-        lr: float,
-        model: nn.Module,
-) -> PPOState:
+def create_ppo_state(resume_dir: Optional[Path], env: environment.Environment, seed: int, lr: float,
+                     model: nn.Module) -> PPOState:
     """
     Initialize or restore a PPOState.  If `resume_dir` is provided, uses
     `checkpoint_manager` to restore the latest checkpoint; if `warm_start`
@@ -580,24 +574,16 @@ def create_ppo_state(
     Otherwise, does a fresh init.
     """
     model_opt = optax.adam(lr)
+    key = jax.random.PRNGKey(seed)
 
     # --- restore path ---
     if resume_dir:
-        step = checkpoint_manager.latest_step()
-        if step is None:
-            raise ValueError(f"No checkpoints found in {resume_dir}")
         # restore the entire PPOState PYTree
-        state: PPOState = checkpoint_manager.restore(step)
-        print(f"Loaded checkpoint from step {step}")
-        if warm_start:
-            state = state.replace(
-                opt_state=model_opt.init(state.params),
-            )
-            print("Optimizer states reinitialized for warm start.")
+        state: PPOState = load_ppo_state(resume_dir, key)
+        state = state.replace(opt_state=model_opt.init(state.params))
         return state
 
     # --- fresh initialization ---
-    key = jax.random.PRNGKey(seed)
     obs_key, ppo_key, state_key = jax.random.split(key, 3)
     first_obs, first_state = env.reset(obs_key, env.default_params)
     model_vars = model.init(ppo_key, first_obs)

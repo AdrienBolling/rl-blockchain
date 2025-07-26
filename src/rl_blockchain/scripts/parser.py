@@ -205,15 +205,9 @@ def _parse_args() -> Namespace:
     )
     train_parser.add_argument(
         "--checkpoint",
-        type=str,
+        type=pathlib.Path,
         default=None,
-        help="Name of the checkpoint to load. Default is None. 'latest' will load the latest checkpoint available.",
-    )
-    train_parser.add_argument(
-        "--warm-start",
-        type=bool,
-        default=False,
-        help="If True, warm start the training from the checkpoint. Default is False.",
+        help="Path of the checkpoint to load. Default is None.",
     )
 
     # Eval of the PPO agent training

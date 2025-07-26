@@ -1,6 +1,5 @@
 import logging
 import pathlib
-import re
 from argparse import Namespace
 from typing import Callable
 
@@ -58,7 +57,7 @@ def train_ppo(ARGS: Namespace):
     model, env, create_params_fn, log_fn = get_env_config(ARGS, key_param)
 
     # If we need to resume a training, get the name of the checkpoint
-    chkpt_name = ARGS.checkpoint
+    load_chkpt_name: pathlib.Path = ARGS.checkpoint
 
     # If the checkpoint is 'latest', get the latest run id
     api = wandb.Api()
@@ -66,21 +65,11 @@ def train_ppo(ARGS: Namespace):
         f"{ARGS.wandb_entity}/{ARGS.wandb_project}",
         order="created_at",
     )
-    try:
-        if chkpt_name == "latest":
-            chkpt_name = runs[-1].id
-        elif chkpt_name is None:
-            chkpt_name = f"run_{len(runs)}"
-        else:
-            # Check if the name respects the format 'run_<int>' with a regex
-            if not re.match(r"^run_\d+$", chkpt_name):
-                raise ValueError(f"Checkpoint name '{chkpt_name}' is not valid. It should be 'run_<int>' or 'latest'.")
-    except ValueError:
-        # When the project does not exist yet, assume no runs
-        chkpt_name = "run_0"
+
+    new_run_chkpt_name = f"run_{len(runs)}"
 
     # Checkpoint_dir
-    chkpt_dir = f"{ARGS.checkpoint_dir}/{ARGS.wandb_entity}_{ARGS.wandb_project}/{chkpt_name}"
+    chkpt_dir = f"{ARGS.checkpoint_dir}/{ARGS.wandb_entity}_{ARGS.wandb_project}/{new_run_chkpt_name}"
 
     # Create the checkpointmanager
     checkpoint_manager = create_checkpoint_manager(
@@ -90,15 +79,7 @@ def train_ppo(ARGS: Namespace):
     )
 
     # Create the PPO state
-    ppo_state = create_ppo_state(
-        checkpoint_manager=checkpoint_manager,
-        resume_dir=chkpt_dir if ARGS.checkpoint else None,
-        warm_start=ARGS.warm_start,
-        env=env,
-        seed=ARGS.seed,
-        lr=lr_fn(0),
-        model=model
-    )
+    ppo_state = create_ppo_state(resume_dir=load_chkpt_name, env=env, seed=ARGS.seed, lr=lr_fn(0), model=model)
 
     key, key_eval = jax.random.split(key)
 
@@ -158,11 +139,8 @@ def eval_ppo_run(args: Namespace):
 
     model, env, create_params_fn, log_fn = get_env_config(args, key_param)
 
-    chkpt_dir :pathlib.Path= args.chkpt_dir
-    chkpt_dir.absolute()
-    print(type(chkpt_dir), chkpt_dir.absolute())
-
-    ppo_state = load_ppo_state(        chkpt_dir, key    )
+    chkpt_dir: pathlib.Path = args.chkpt_dir
+    ppo_state = load_ppo_state(chkpt_dir, key)
 
     # Evaluate the PPO agent
     metrics = eval_ppo(

@@ -4,6 +4,7 @@ from argparse import Namespace
 
 import wandb
 
+
 def setup_logging(args: Namespace, run: "wandb.Run") -> str:
     level = getattr(logging, args.logging_level.upper(), logging.INFO)
     log_dir = args.log_dir
@@ -38,6 +39,7 @@ def setup_logging(args: Namespace, run: "wandb.Run") -> str:
 
     return log_path
 
+
 def setup_wandb(args: Namespace) -> wandb.sdk.wandb_run.Run:
     """
     Initialise Weights & Biases (wandb) avec reprise facultative depuis un checkpoint.
@@ -49,45 +51,23 @@ def setup_wandb(args: Namespace) -> wandb.sdk.wandb_run.Run:
     entity = args.wandb_entity
     project = args.wandb_project
 
-    if args.checkpoint:
-        chkpt_name = args.checkpoint
+    # Nouveau run
+    try:
+        runs = api.runs(f"{entity}/{project}", order="-created_at")
+        run_number = len(runs)
+    except wandb.errors.CommError:
+        run_number = 0
 
-        # Si "latest", retrouver le dernier run
-        if chkpt_name == "latest":
-            try:
-                runs = api.runs(f"{entity}/{project}", order="-created_at")
-                chkpt_name = runs[0].id if runs else "run_0"
-            except wandb.errors.CommError:
-                chkpt_name = "run_0"
-
-        # Reprise d'un run existant
-        run = wandb.init(
-            project=project,
-            entity=entity,
-            id=chkpt_name,
-            resume="must",
-            config=config,
-            group=args.algo,
-            tags=args.wandb_tags,
-        )
-    else:
-        # Nouveau run
-        try:
-            runs = api.runs(f"{entity}/{project}", order="-created_at")
-            run_number = len(runs)
-        except wandb.errors.CommError:
-            run_number = 0
-
-        run_id = f"run_{run_number}"
-        run = wandb.init(
-            project=project,
-            entity=entity,
-            name=run_id,
-            # id=run_id,
-            config=config,
-            group=args.algo,
-            tags=args.wandb_tags,
-        )
+    run_id = f"run_{run_number}"
+    run = wandb.init(
+        project=project,
+        entity=entity,
+        name=run_id,
+        # id=run_id,
+        config=config,
+        group=args.algo,
+        tags=args.wandb_tags,
+    )
 
     print(f"[wandb] Run en cours : https://wandb.ai/{entity}/{project}/runs/{run.id}")
     return run
