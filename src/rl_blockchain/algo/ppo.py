@@ -534,33 +534,50 @@ def create_checkpoint_manager(
 
 
 def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module, key: jax.Array,
-             create_params_fn: Callable[[jax.Array], TEnvParams], num_episodes: int = 10, recorded_episodes: int = 10,
+             create_params_fn: Callable[[jax.Array], TEnvParams], num_episodes: int = 10,
+             recorded_episodes: int = 10, batch_size: int = 10,
              log_fn: LOG_TYPE = None) -> dict[str, jax.Array]:
     @jax.jit
     def single_rollout(rng: jax.Array, new_param: EnvParams):
         return rollout_eval(rng, env, model, ppo_state, new_param, env.default_params.max_steps_in_episode)
 
     vm_rollouts = jax.vmap(single_rollout)
+    params_map = jax.vmap(create_params_fn)
 
-    params_map = jax.vmap(
-        lambda key_map: create_params_fn(key_map)
-    )
+    all_rewards = []
+    all_dones = []
+    all_infos = []
 
-    # RNG split
-    rollout_key, params_key = jax.random.split(key)
-    subkeys = jax.random.split(rollout_key, num_episodes)
-    subkeys_params = jax.random.split(params_key, num_episodes)
+    num_batches = (num_episodes + batch_size - 1) // batch_size
+    current_key = key
 
-    params_list = params_map(subkeys_params)
-    _, _, rews, dones, infos = vm_rollouts(subkeys, params_list)
-    logger.info(f"Evaluated {num_episodes} episodes.")
+    batch_key = jax.random.split(current_key, num_batches)
 
-    metrics = log_fn(infos, rews, dones)
+    for this_batch_key in batch_key:
+        rollout_key, param_key = jax.random.split(this_batch_key)
+        subkeys = jax.random.split(rollout_key, batch_size)
+        subkeys_params = jax.random.split(param_key, batch_size)
 
-    metrics["avg_returns_episode"] = rews.sum(axis=1).mean().tolist()
-    sub_rewards = rews.mean(axis=1).tolist()
+        params_list = params_map(subkeys_params)
+        _, _, rews, dones, infos = vm_rollouts(subkeys, params_list)
+
+        all_rewards.append(rews)
+        all_dones.append(dones)
+        all_infos.append(infos)
+
+    # Concaténer les résultats
+    all_rewards = jnp.concatenate(all_rewards, axis=0)
+    all_dones = jnp.concatenate(all_dones, axis=0)
+    all_infos = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *all_infos)
+
+    logger.info(f"Evaluated {num_episodes} episodes in {num_batches} batches of at most {batch_size} envs.")
+
+    metrics = log_fn(all_infos, all_rewards, all_dones)
+    metrics["avg_returns_episode"] = all_rewards.sum(axis=1).mean()
+
+    sub_rewards = all_rewards.mean(axis=1)
     for i in range(min(recorded_episodes, num_episodes)):
-        metrics[f"avg_reward_episode_{i}"] = sub_rewards[i]
+        metrics[f"reward_{i}"] = sub_rewards[i]
 
     return metrics
 
