@@ -107,6 +107,7 @@ def train_ppo(ARGS: Namespace):
                 model=model,
                 create_params_fn=create_params_fn,
                 num_episodes=ARGS.eval_episodes,
+                recorded_episodes=5,
                 log_fn=log_fn
             )
 
@@ -135,20 +136,22 @@ def get_env_config(ARGS: Namespace, key_param: jax.Array):
 
 def eval_ppo_run(args: Namespace):
     key = jax.random.PRNGKey(args.seed)
-    key, state_key, key_param = jax.random.split(key, 3)
+    key_eval, state_key, key_param = jax.random.split(key, 3)
 
     model, env, create_params_fn, log_fn = get_env_config(args, key_param)
 
     chkpt_dir: pathlib.Path = args.chkpt_dir
-    ppo_state = load_ppo_state(chkpt_dir, key)
+    ppo_state = load_ppo_state(chkpt_dir, state_key)
 
     # Evaluate the PPO agent
     metrics = eval_ppo(
         ppo_state=ppo_state,
         env=env,
+        key=key_eval,
         model=model,
         create_params_fn=create_params_fn,
         num_episodes=args.eval_episodes,
+        recorded_episodes=5,
         log_fn=log_fn
     )
 

@@ -75,7 +75,7 @@ class BlockchainEnvBuilder(EnvBuilder):
         total_dones = dones.sum()
         infos_env_refined["avg_rewards"] = jnp.mean(rews)
         infos_env_refined["nb_sequences_done"] = total_dones
-        infos_env_refined["reward_mean_per_episode"] = total_rewards / total_dones if total_dones > 0 else 0
+        infos_env_refined["reward_mean_per_episode"] = total_rewards / total_dones if total_dones > 0 else total_rewards
         return infos_env_refined
 
 

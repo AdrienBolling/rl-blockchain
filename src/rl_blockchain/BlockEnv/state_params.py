@@ -107,27 +107,14 @@ class EnvParams(environment.EnvParams):
     network_graph: jraph.GraphsTuple = None  # Parameters
     adj_matrix: jnp.ndarray = None  # same graph, but in a different struct
     nb_validators: int = 0
-    # nb_nodes: int = 0
-    # box_clip = _box_clip  # Clip value for node features
-
     rewards_weights: jax.Array = None  # Weights for the rewards
-
-    # distance_opt_array: jax.Array = None  # Dictionary of optimal distance bounds for each number of validators
-    # avg_distance: float = 0.0  # Average distance for the environment, can be the last avg distance
-
-    # horizon: int = 200
-    # node_features = ["distrib_chosen", "chosen"]
-
-    # Settings
-    # rewards = ["gini", "distance"]
-    rew_sigma: float = 0.2
-    max_time_steps: float = 10000
-
-    max_steps_in_episode = 1000  # TODO Set it to -1
+    max_outer_steps_in_episode: int = 1000  # TODO Set it to -1
+    max_steps_in_episode = 1000
 
     @classmethod
     def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int,
-               rewards_weights: list | jax.Array = None) -> 'EnvParams':
+               rewards_weights: list | jax.Array = None, max_outer_step: int = 1000,
+               max_steps: int | None = None) -> 'EnvParams':
         # nb_nodes = network_graph.shape[0]
         # min_max_array = load_min_max_array(filename)
         # avg_distance = min_max_array[nb_nodes][0]
@@ -142,12 +129,14 @@ class EnvParams(environment.EnvParams):
             adj_matrix=norm_adj_matrix,
             nb_validators=nb_validators,
             rewards_weights=rewards_weights_jnp / rewards_weights_jnp.sum(),
-            max_steps_in_episode=1000,
+            max_steps_in_episode=max_outer_step * (nb_validators + 1) if max_steps is None else max_steps,
+            max_outer_steps_in_episode=max_outer_step
         )
 
     @classmethod
     def create_random(cls, nb_nodes: int, key: jax.Array, nb_validators: int = None,
-                      rewards_weights: list | jax.Array = None, ) -> 'EnvParams':
+                      rewards_weights: list | jax.Array = None, max_outer_step: int = 1000,
+                      max_steps: int | None = None) -> 'EnvParams':
         """
         Create randomized environment parameters.
         Args:
@@ -155,6 +144,8 @@ class EnvParams(environment.EnvParams):
             key (jax.Array): JAX random key for reproducibility.
             nb_validators (int, optional): Number of validators. If None, a random number is generated.
             rewards_weights (list or jax.Array, optional): Weights for the rewards. If None, random weights are generated.
+            max_outer_step (int, optional): Maximum number of outer steps in an episode. Default is 1000.
+            max_steps (int, optional): Maximum number of steps in an episode. If None, it is set to `max_outer_step * (nb_validators + 1)`.
         """
         key_mat, key_nb_val, key_rew_weights = jax.random.split(key, 3)
         adj_mat = create_rd_adj_matrix(nb_nodes, key_mat)
@@ -163,7 +154,7 @@ class EnvParams(environment.EnvParams):
             nb_validators = jnp.clip(jnp.round(val_sample), 4, nb_nodes).astype(int)
         if rewards_weights is None:
             rewards_weights = jax.random.uniform(key_rew_weights, shape=(2,), minval=0.0, maxval=1.0)
-        return cls.create(adj_mat, nb_validators, rewards_weights)
+        return cls.create(adj_mat, nb_validators, rewards_weights, max_outer_step, max_steps)
 
 
 @jax.jit

@@ -144,7 +144,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
             "chosen_nodes": spaces.Box(
                 low=0, high=1, shape=(self._static_params.nb_nodes,), dtype=jnp.bool),
             "inner_step": spaces.Discrete(self._static_params.nb_nodes + 1),  # +1 for the global step
-            "global_step": spaces.Discrete(params.max_steps_in_episode),
+            "global_step": spaces.Discrete(params.max_outer_steps_in_episode),
         })
 
     def get_obs(self, state: EnvState, params: EnvParams = None, key=None) -> jraph.GraphsTuple:
@@ -160,7 +160,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         return obs_graph
 
     def is_terminal(self, state: EnvState, params: EnvParams) -> jax.Array:
-        done_steps = state.global_step >= params.max_steps_in_episode
+        done_steps = state.global_step >= params.max_outer_steps_in_episode
         return jnp.array(done_steps)
 
     def step_env(self, key: jax.Array, state: EnvState, action: int | float | jax.Array, params: EnvParams) -> tuple[

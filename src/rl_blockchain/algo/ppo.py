@@ -534,7 +534,8 @@ def create_checkpoint_manager(
 
 
 def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module, key: jax.Array,
-             create_params_fn: Callable[[jax.Array], TEnvParams], num_episodes: int = 10, log_fn: LOG_TYPE = None):
+             create_params_fn: Callable[[jax.Array], TEnvParams], num_episodes: int = 10, recorded_episodes: int = 10,
+             log_fn: LOG_TYPE = None) -> dict[str, jax.Array]:
     @jax.jit
     def single_rollout(rng: jax.Array, new_param: EnvParams):
         return rollout_eval(rng, env, model, ppo_state, new_param, env.default_params.max_steps_in_episode)
@@ -558,8 +559,8 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
 
     metrics["avg_returns_episode"] = rews.sum(axis=1).mean().tolist()
     sub_rewards = rews.mean(axis=1).tolist()
-    for i, rew in enumerate(sub_rewards):
-        metrics[f"reward_{i}"] = rew
+    for i in range(min(recorded_episodes, num_episodes)):
+        metrics[f"avg_reward_episode_{i}"] = sub_rewards[i]
 
     return metrics
 
