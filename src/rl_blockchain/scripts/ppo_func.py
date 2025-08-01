@@ -125,6 +125,10 @@ def get_env_config(ARGS: Namespace, key_param: jax.Array):
     if env_name == "blockenv":
         config = {"n_nodes": ARGS.n_nodes, "gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
                   "reward_weights": ARGS.reward_weights}
+    elif env_name == "blockenv_close_map":
+        assert ARGS.ref_map_file is not None, "ref_map_file must be provided for blockenv_close_map"
+        config = {"gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
+                  "reward_weights": ARGS.reward_weights, "ref_map_file": ARGS.ref_map_file}
     elif env_name == "cartpole":
         config = {}
     else:

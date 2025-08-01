@@ -1,4 +1,5 @@
 import json
+import pathlib
 from functools import partial
 
 import jax
@@ -14,7 +15,7 @@ def normalize_max(w: jax.Array) -> jax.Array:
     w_no_diag = w.at[jnp.diag_indices(n)].set(jnp.nan)
     w_max = jnp.nanmax(w_no_diag)
 
-    w_norm = w /w_max
+    w_norm = w / w_max
     w_norm = w_norm.at[jnp.diag_indices(n)].set(0.0)
 
     return w_norm
@@ -32,36 +33,53 @@ def _create_pairwise_arrays(n):
 @partial(jax.jit, static_argnames=['n_nodes'])
 def create_rd_adj_matrix(n_nodes: int, key):
     positions = jax.random.uniform(key, (n_nodes, 2))
-    diff = positions[:, None, :] - positions[None, :, :]   # (n, n, 2)
+    diff = positions[:, None, :] - positions[None, :, :]  # (n, n, 2)
     dists = jnp.linalg.norm(diff, axis=-1)
     return normalize_max(dists)
 
 
-def compute_adjacency_matrix(dict_node: dict) -> np.ndarray:
-    coords = np.array([dict_node[k] for k in sorted(dict_node.keys())], dtype=np.float32)
-    nb_node = coords.shape[0]
-    matrix = np.zeros((nb_node, nb_node), dtype=np.float32)
-    for i in range(nb_node):
-        for j in range(i + 1, nb_node):
-            dist = np.linalg.norm(coords[i] - coords[j])
-            matrix[i, j] = dist
-            matrix[j, i] = dist
-    return matrix
+def import_positions_from_file(file_path: pathlib.Path) -> jax.Array:
+    """
+    Import node positions from a JSON file.
+    :param file_path: Path to the JSON file containing node positions.
+    :return: A dictionary mapping node indices to their positions.
+    """
+    with open(file_path, 'r') as f:
+        position_map = json.load(f)
+        position_map = [np.array(v, dtype=np.float32) for k, v in position_map.items()]
+
+    return jnp.array(position_map)
 
 
-def import_adj_matrix_from_file(file_path: str) -> jnp.ndarray:
+def make_rd_closed_adj_matrix(list_nodes_position: jax.Array, key: jax.Array, std: float = 0.01) -> jax.Array:
+    n_nodes = list_nodes_position.shape[0]
+    max_height, max_width = list_nodes_position[:, 0].max(), list_nodes_position[:, 1].max()
+    error_positions = jax.random.normal(key, (n_nodes, 2)) * std
+    error_positions = error_positions.at[:, 0].set(error_positions[:, 0] * max_width)
+    error_positions = error_positions.at[:, 1].set(error_positions[:, 1] * max_height)
+    new_postions_map = list_nodes_position + error_positions
+    return make_adj_matrix_from_positions(new_postions_map)
+
+
+def make_adj_matrix_from_positions(list_nodes_position: jax.Array) -> jnp.ndarray:
+    """
+    Create an adjacency matrix from a dictionary of node positions.
+    :param list_nodes_position: A dictionary mapping node indices to their positions.
+    :return: A JAX array representing the adjacency matrix.
+    """
+    matrix = list_nodes_position[:, None, :] - list_nodes_position[None, :, :]  # (N, N, 2)
+    matrix = jnp.linalg.norm(matrix, axis=-1)  # (N, N)
+    return normalize_max(matrix)
+
+
+def import_adj_matrix_from_file(file_path: pathlib.Path) -> jnp.ndarray:
     """
     Import an adjacency matrix from a CSV file.
     :param file_path: Path to the CSV file containing the adjacency matrix.
     :return: A JAX array representing the adjacency matrix.
     """
-    with open(file_path, 'r') as f:
-        position_map = json.load(f)
-        position_map = {int(k): v for k, v in position_map.items()}
-        matrix = compute_adjacency_matrix(position_map)
-    # Convert the matrix to a JAX array with float32 type
-    mat = jnp.array(matrix, dtype=jnp.float32)
-    return normalize_max(mat)
+    position_map = import_positions_from_file(file_path)
+    return make_adj_matrix_from_positions(position_map)
 
 
 @jax.jit

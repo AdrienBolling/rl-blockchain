@@ -132,8 +132,15 @@ def _parse_args() -> Namespace:
     ppo_parser.add_argument(
         "--eval-episodes",
         type=int,
-        default=10,
+        default=100,
         help="Number of episodes to run for evaluation. Default is 10.",
+    )
+
+    ppo_parser.add_argument(
+        "--ref-map-file",
+        type=pathlib.Path,
+        default=None,
+        help="Path to the reference map file for the environment. Default is None.",
     )
 
     mode_subparsers = ppo_parser.add_subparsers(dest="mode", required=True)
@@ -150,7 +157,7 @@ def _parse_args() -> Namespace:
         "--num-steps",
         type=int,
         default=10000,
-        help="Number of steps per epoch. Default is 4000.",
+        help="Number of steps per epoch. Default is 10000.",
     )
     train_parser.add_argument(
         "--num-envs",

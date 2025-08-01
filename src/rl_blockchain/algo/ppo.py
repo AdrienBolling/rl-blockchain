@@ -389,7 +389,7 @@ def eval_ppo_and_log(env: BlockchainEnv, model: nn.module, ppo_state: PPOState, 
     print(f"Eval over {num_episodes} eps: avg return={avg:.3f}")
 
 
-def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, model: nn.module, num_steps: int,
+def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, model: nn.Module, num_steps: int,
                 num_envs: int,
                 create_params_fn: Callable[[jax.Array], TEnvParams],
                 batch_size: int,
@@ -421,11 +421,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
 
     vm_rollout = jax.vmap(single_rollout)
 
-    params_map = jax.vmap(
-        # lambda key_map: EnvParams.create_random(env.nb_nodes, key_map, env.default_params.nb_validators,
-        #                                        env.default_params.rewards_weights),
-        lambda key_map: create_params_fn(key_map)
-    )
+    params_map = jax.vmap(create_params_fn)
 
     # Split RNG keys for rollouts and parameter sampling
     rollout_key, params_key, perm_key, new_ppo_key = jax.random.split(ppo_state.rng_key, 4)

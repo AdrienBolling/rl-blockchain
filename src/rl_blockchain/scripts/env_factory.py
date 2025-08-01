@@ -5,11 +5,12 @@ import flax.linen as nn
 import gymnax
 import jax
 import jax.numpy as jnp
-import wandb
 from gymnax.environments.environment import Environment, TEnvParams
 
 from rl_blockchain import BlockEnv
 from rl_blockchain.BlockEnv import StaticEnvParams, BlockchainEnv
+from rl_blockchain.BlockEnv.BlockchainGraph import make_rd_closed_adj_matrix, import_positions_from_file, \
+    make_adj_matrix_from_positions
 from rl_blockchain.model import CategoricalSeparateMLP, PPO_NET_GAT
 from rl_blockchain.scripts.parser import REF_FILENAME
 
@@ -78,7 +79,6 @@ class BlockchainEnvBuilder(EnvBuilder):
         infos_env_refined["reward_mean_per_episode"] = total_rewards / total_dones if total_dones > 0 else total_rewards
         return infos_env_refined
 
-
     def build(self, key_param: jax.Array, config: Dict[str, Any]) -> EnvInitOutput:
         self.validate_config(config)
         gat1_out, gat2_out, gat2_nodes_out = config["gat_arch"]
@@ -93,6 +93,30 @@ class BlockchainEnvBuilder(EnvBuilder):
 
         env_params = create_params_fn(key_param)
         static_params = StaticEnvParams.create(config["n_nodes"], REF_FILENAME[config["n_nodes"]])
+        env = BlockchainEnv(env_params, static_params)
+        model = PPO_NET_GAT(gat1_out, gat2_out, gat2_nodes_out, env.num_actions)
+
+        return model, env, env_params, create_params_fn, self.__class__.log
+
+
+class BlockchainEnvCloseMapBuilder(BlockchainEnvBuilder):
+    required_keys = ["gat_arch", "voting_nodes", "reward_weights", "ref_map_file"]
+
+    def build(self, key_param: jax.Array, config: Dict[str, Any]) -> EnvInitOutput:
+        self.validate_config(config)
+        gat1_out, gat2_out, gat2_nodes_out = config["gat_arch"]
+
+        positions = import_positions_from_file(config["ref_map_file"])
+
+        nb_nodes = positions.shape[0]
+
+        def create_params_fn(key: jax.Array) -> BlockEnv.EnvParams:
+            new_adj_mat = make_rd_closed_adj_matrix(positions, key, 0.05)
+            return BlockEnv.EnvParams.create(new_adj_mat, config["voting_nodes"], config["reward_weights"])
+
+        int_adj_mat = make_adj_matrix_from_positions(positions)
+        env_params = BlockEnv.EnvParams.create(int_adj_mat, config["voting_nodes"], config["reward_weights"])
+        static_params = StaticEnvParams.create(nb_nodes, REF_FILENAME[nb_nodes])
         env = BlockchainEnv(env_params, static_params)
         model = PPO_NET_GAT(gat1_out, gat2_out, gat2_nodes_out, env.num_actions)
 
@@ -142,4 +166,5 @@ class GenericEnvFactory:
 
 # Registration
 GenericEnvFactory.register("blockenv", BlockchainEnvBuilder())
+GenericEnvFactory.register("blockenv_close_map", BlockchainEnvCloseMapBuilder())
 GenericEnvFactory.register("cartpole", CartPoleEnvBuilder())
