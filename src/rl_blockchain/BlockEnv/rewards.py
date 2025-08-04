@@ -4,10 +4,12 @@ import jax.numpy as jnp
 from rl_blockchain.BlockEnv.BlockchainGraph import gini_coefficient, gini_coefficient_worst
 from rl_blockchain.BlockEnv.state_params import EnvState, EnvParams, get_stake_distribution, StaticEnvParams
 
+
 def _gen_post_filter(inflex_pts: float, inflex_value: float) -> callable:
     """
     Generate a post-filtering function with the given inflexion points and values.
     """
+
     @jax.jit
     def post_filter(previous_reward: float) -> float:
         """
@@ -19,9 +21,12 @@ def _gen_post_filter(inflex_pts: float, inflex_value: float) -> callable:
             lambda r: 1 + (r - 1) * (1 - inflex_value) / (1 - inflex_pts),
             previous_reward
         )
+
     return post_filter
 
+
 _post_filter_gini = _gen_post_filter(0.95 / 1.5, 0.95)  # Default inflexion point and value for Gini reward
+
 
 def gini_reward(state: EnvState, params: EnvParams) -> tuple[jax.Array, jax.Array]:
     """
@@ -65,6 +70,7 @@ def get_avg_distance(state: EnvState, params: EnvParams) -> jax.Array:
 
 _post_filter_distance = _gen_post_filter(0.5, 0.25)  # Default inflexion point and value for distance reward
 
+
 def distance_reward(state: EnvState, params: EnvParams, static_params: StaticEnvParams) -> tuple[jax.Array, jax.Array]:
     # EnvParams
     """
@@ -93,8 +99,9 @@ def weighted_rewards(old_state: EnvState, new_state: EnvState, params: EnvParams
     gini_reward_value, gini_value = gini_reward(new_state, params)
     distance_reward_value, avg_value = distance_reward(old_state, params, static_params)
     weighted_value = jnp.array([gini_reward_value, distance_reward_value]) * params.rewards_weights
-    return weighted_value.sum(), {"gini": gini_value, "gini_reward": gini_reward_value, "distance": avg_value,
-                                  "distance_reward": distance_reward_value}
+    weighted_value_sum = weighted_value.sum()
+    return weighted_value_sum, {"gini": gini_value, "gini_reward": gini_reward_value, "distance": avg_value,
+                                  "distance_reward": distance_reward_value, "weighted_reward": weighted_value_sum}
 
 
 def null_reward() -> (jax.Array, dict):
@@ -102,5 +109,6 @@ def null_reward() -> (jax.Array, dict):
         "gini": jnp.array(0, dtype=jnp.float32),
         "gini_reward": jnp.array(0, dtype=jnp.float32),
         "distance": jnp.array(0, dtype=jnp.float32),
-        "distance_reward": jnp.array(0, dtype=jnp.float32)
+        "distance_reward": jnp.array(0, dtype=jnp.float32),
+        "weighted_reward": jnp.array(0, dtype=jnp.float32)
     }

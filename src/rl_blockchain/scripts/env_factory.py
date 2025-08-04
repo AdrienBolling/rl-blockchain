@@ -57,7 +57,7 @@ class EnvBuilder(abc.ABC):
 
 
 def compute_avg_value(infos: dict[str, jax.Array]) -> dict[str, jax.Array]:
-    infos_keys = ["gini", "distance", "gini_reward", "distance_reward"]
+    infos_keys = ["gini", "distance", "gini_reward", "distance_reward", "weighted_reward"]
     list_is_inner: jax.Array = infos["action_taken"] == -1
     sum_inner = list_is_inner.sum()
     returned_infos = {}

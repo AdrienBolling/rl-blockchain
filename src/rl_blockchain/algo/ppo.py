@@ -545,9 +545,8 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
     all_infos = []
 
     num_batches = (num_episodes + batch_size - 1) // batch_size
-    current_key = key
 
-    batch_key = jax.random.split(current_key, num_batches)
+    batch_key = jax.random.split(key, num_batches)
 
     for this_batch_key in batch_key:
         rollout_key, param_key = jax.random.split(this_batch_key)

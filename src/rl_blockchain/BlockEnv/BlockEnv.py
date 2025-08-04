@@ -179,9 +179,9 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         new_obs = self.get_obs(new_state, params)
         mask = compute_legal_actions_state(state, params)
         is_illegal_action = jnp.logical_not(mask[action])
-        done = jnp.logical_or(self.is_terminal(state, params), is_illegal_action)
+        done = jnp.logical_or(self.is_terminal(new_state, params), is_illegal_action)
 
-        operand_reward = (state,new_state, params, self._static_params)
+        operand_reward = (state, new_state, params, self._static_params)
         reward, info = jax.lax.cond(
             jnp.logical_or(is_illegal_action, is_inner),
             lambda tup: null_reward(),
