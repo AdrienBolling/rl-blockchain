@@ -154,7 +154,9 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         preprocessed_stake_distribution = preprocessing_validator_distribution(
             stake_distribution_relative, self._static_params.box_clip)
         node_features = jnp.column_stack((state.chosen_nodes, preprocessed_stake_distribution))
-        global_features = jnp.array([params.nb_validators])
+        nb_selected_nodes = jnp.sum(state.chosen_nodes)
+        global_features = params.nb_validators - nb_selected_nodes
+        global_features = jnp.array([global_features], dtype=jnp.float32)
 
         obs_graph = params.network_graph._replace(nodes=node_features, globals=global_features)
         return obs_graph
@@ -223,7 +225,8 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         state = jax.tree.map(
             lambda x, y: jax.lax.select(done, x, y), state_re, state_st
         )
-        obs = obs_re._replace(nodes=jax.lax.select(done, obs_re.nodes, obs_st.nodes))
+        obs = obs_re._replace(nodes=jax.lax.select(done, obs_re.nodes, obs_st.nodes),
+                              globals=jax.lax.select(done, obs_re.globals, obs_st.globals))
 
         return obs, state, reward, done, info
 
@@ -251,8 +254,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         return jax.random.choice(key, a=legal_mask.shape[0], p=legal_probs)
 
 
-def compute_legal_actions(chosen_nodes: jax.Array, nb_validators: int) -> jnp.ndarray:
-    current_nb_val = jnp.sum(chosen_nodes)
+def compute_legal_actions(chosen_nodes: jax.Array, nb_val_to_choose: int) -> jnp.ndarray:
     available = jnp.logical_not(chosen_nodes)
     nb_nodes = chosen_nodes.shape[0]
 
@@ -265,7 +267,7 @@ def compute_legal_actions(chosen_nodes: jax.Array, nb_validators: int) -> jnp.nd
     too_much_validators = too_much_validators.at[0].set(True)
 
     return jax.lax.select(
-        current_nb_val < nb_validators,
+        nb_val_to_choose > 0,
         not_enough_validators,
         too_much_validators
     )
@@ -275,11 +277,12 @@ def compute_legal_actions(chosen_nodes: jax.Array, nb_validators: int) -> jnp.nd
 def compute_legal_actions_state(state: EnvState, params: EnvParams) -> jnp.ndarray:
     chosen_nodes = state.chosen_nodes
     nb_validators = params.nb_validators
-    return compute_legal_actions(chosen_nodes, nb_validators)
+    nb_val_to_choose = nb_validators - jnp.sum(chosen_nodes)
+    return compute_legal_actions(chosen_nodes, nb_val_to_choose)
 
 
 @jax.jit
 def compute_legal_actions_obs(obs: GraphsTuple) -> jnp.ndarray:
     chosen_nodes = obs.nodes[:, 0]
-    nb_validators = obs.globals[0]
-    return compute_legal_actions(chosen_nodes, nb_validators)
+    nb_val_to_choose = obs.globals[0]
+    return compute_legal_actions(chosen_nodes, nb_val_to_choose)

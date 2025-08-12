@@ -11,7 +11,7 @@ from rl_blockchain import BlockEnv
 from rl_blockchain.BlockEnv import StaticEnvParams, BlockchainEnv
 from rl_blockchain.BlockEnv.BlockchainGraph import make_rd_closed_adj_matrix, import_positions_from_file, \
     make_adj_matrix_from_positions
-from rl_blockchain.model import CategoricalSeparateMLP, PPO_NET_GAT
+from rl_blockchain.model import CategoricalSeparateMLP, PPO_NET_GAT, PPO_SKIP
 from rl_blockchain.scripts.parser import REF_FILENAME
 
 # Type alias
@@ -94,7 +94,8 @@ class BlockchainEnvBuilder(EnvBuilder):
         env_params = create_params_fn(key_param)
         static_params = StaticEnvParams.create(config["n_nodes"], REF_FILENAME[config["n_nodes"]])
         env = BlockchainEnv(env_params, static_params)
-        model = PPO_NET_GAT(gat1_out, gat2_out, gat2_nodes_out, env.num_actions)
+        # model = PPO_NET_GAT(gat1_out, gat2_out, gat2_nodes_out, env.num_actions)
+        model = PPO_SKIP(env.num_actions)
 
         return model, env, env_params, create_params_fn, self.__class__.log
 
