@@ -1,8 +1,12 @@
+from typing import Callable
+
 import distrax
 import jax
 import jraph as jr
+import jraph._src.models as jr_m
 from flax import linen as nn
 from jax import numpy as jnp
+from jraph._src.utils import segment_sum
 
 from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions_obs
 
@@ -87,7 +91,7 @@ def make_mlp(
         hidden_layers: list[int] | None = None,
         *,
         activation=nn.gelu,
-        use_prenorm: bool = True,
+        pre_norm: bool = False,
         last_activation: bool = False,
         dtype=jnp.float32,
         kernel_init=nn.initializers.lecun_normal(),
@@ -96,9 +100,9 @@ def make_mlp(
         hidden_layers = [latent_size]
 
     layers: list = []
+    if pre_norm:
+        layers.append(nn.LayerNorm())
     for width in hidden_layers:
-        if use_prenorm:
-            layers.append(nn.LayerNorm())
         layers.append(nn.Dense(width, dtype=dtype, kernel_init=kernel_init))
         layers.append(activation)
 
@@ -110,8 +114,8 @@ def make_mlp(
     return nn.Sequential(layers)
 
 
-def make_embed_fn(latent_size, hidden_layers: list[int] | None = None):
-    sequential_layer = make_mlp(latent_size, hidden_layers=hidden_layers)
+def make_embed_fn(latent_size, hidden_layers: list[int] | None = None, pre_norm: bool = False):
+    sequential_layer = make_mlp(latent_size, hidden_layers=hidden_layers, pre_norm=pre_norm)
 
     @jr.concatenated_args
     def embed(inputs) -> jnp.ndarray:
@@ -120,7 +124,15 @@ def make_embed_fn(latent_size, hidden_layers: list[int] | None = None):
     return embed
 
 
-make_attention_logit_fn = make_embed_fn  # Reuse the same function for attention logits
+def make_attention_logit_fn(latent_size, hidden_layers: list[int] | None = None):
+    """
+    Reuse the same function for attention logits.
+    """
+    if hidden_layers is None:
+        hidden_layers = [latent_size]
+    # hidden_layers.append(1)  # Ensure the last layer is of size 1 for logits
+    hidden_layers = (*hidden_layers,1)
+    return make_embed_fn(latent_size, hidden_layers=hidden_layers)
 
 
 def attention_reduce_fn(edges: jnp.ndarray, attention: jnp.ndarray):
@@ -219,13 +231,25 @@ class PPO_NET_GAT(nn.Module):
         return val, pi
 
 
+def make_norm_layer():
+    return jr.GraphMapFeatures(
+        embed_edge_fn=nn.LayerNorm(),
+        embed_node_fn=nn.LayerNorm(),
+        embed_global_fn=nn.LayerNorm(),
+    )
+
+
 class Transf_GAT(nn.Module):
     layer_output_dim: int
     layer_hidden_dim: list[int]
     layer_hidden_edge_dim: list[int]
 
     @nn.compact
-    def __call__(self, h0: jr.GraphsTuple):
+    def __call__(self, graph: jr.GraphsTuple):
+        norm_layer_0 = make_norm_layer()
+
+        h0 = norm_layer_0(graph)
+
         net_gat = jr.GraphNetGAT(
             update_edge_fn=make_embed_fn(self.layer_output_dim, hidden_layers=self.layer_hidden_edge_dim),
             update_node_fn=make_embed_fn(self.layer_output_dim, hidden_layers=self.layer_hidden_dim),
@@ -235,21 +259,13 @@ class Transf_GAT(nn.Module):
         )
         d_h0 = net_gat(h0)
 
-        h1 = jr.GraphsTuple(
-            nodes=d_h0.nodes + h0.nodes,
-            edges=d_h0.edges + h0.edges,
-            globals=d_h0.globals + h0.globals,
-            senders=h0.senders,
-            receivers=h0.receivers,
-            n_node=h0.n_node,
-            n_edge=h0.n_edge,
+        h1 = h0._replace(
+            nodes=d_h0.nodes + graph.nodes,
+            edges=d_h0.edges + graph.edges,
+            globals=d_h0.globals + graph.globals,
         )
 
-        norm_layer_1 = jr.GraphMapFeatures(
-            embed_edge_fn=nn.LayerNorm(),
-            embed_node_fn=nn.LayerNorm(),
-            embed_global_fn=nn.LayerNorm(),
-        )
+        norm_layer_1 = make_norm_layer()
         norm_h1 = norm_layer_1(h1)
 
         mlp_layer = jr.GraphMapFeatures(
@@ -258,23 +274,27 @@ class Transf_GAT(nn.Module):
             embed_global_fn=make_embed_fn(self.layer_output_dim, hidden_layers=self.layer_hidden_dim),
         )
         mlp_h1 = mlp_layer(norm_h1)
-        h2 = jr.GraphsTuple(
-            nodes=mlp_h1.nodes + norm_h1.nodes,
-            edges=mlp_h1.edges + norm_h1.edges,
-            globals=mlp_h1.globals + norm_h1.globals,
-            senders=norm_h1.senders,
-            receivers=norm_h1.receivers,
-            n_node=norm_h1.n_node,
-            n_edge=norm_h1.n_edge,
+        h2 = h1._replace(
+            nodes=mlp_h1.nodes + h1.nodes,
+            edges=mlp_h1.edges + h1.edges,
+            globals=mlp_h1.globals + h1.globals,
         )
 
-        norm_layer_2 = jr.GraphMapFeatures(
-            embed_edge_fn=nn.LayerNorm(),
-            embed_node_fn=nn.LayerNorm(),
-            embed_global_fn=nn.LayerNorm(),
-        )
+        norm_layer_2 = make_norm_layer()
         norm_h2 = norm_layer_2(h2)
         return norm_h2
+
+
+def DeepSetsGlobalised(
+        update_node_fn: Callable[[jr_m.NodeFeatures, jr_m.Globals], jr_m.NodeFeatures] | None,
+        update_global_fn: Callable[[jr_m.NodeFeatures, jr_m.Globals], jr_m.Globals],
+        aggregate_nodes_for_globals_fn:
+        jr_m.AggregateNodesToGlobalsFn = segment_sum):
+    return jr.GraphNetwork(
+        update_edge_fn=None,
+        update_node_fn=None if update_node_fn is None else lambda n, s, r, g: update_node_fn(n, g),
+        update_global_fn=lambda n, e, g: update_global_fn(n, g),
+        aggregate_nodes_for_globals_fn=aggregate_nodes_for_globals_fn)
 
 
 class PPO_SKIP(nn.Module):
@@ -291,11 +311,14 @@ class PPO_SKIP(nn.Module):
 
         embedding_encoder = jr.GraphMapFeatures(
             embed_edge_fn=make_embed_fn(self.embedded_dim,
-                                        hidden_layers=[self.embedding_hidden_dim, self.embedding_hidden_dim]),
+                                        hidden_layers=[self.embedding_hidden_dim, self.embedding_hidden_dim],
+                                        pre_norm=True),
             embed_node_fn=make_embed_fn(self.embedded_dim,
-                                        hidden_layers=[self.embedding_hidden_dim, self.embedding_hidden_dim]),
+                                        hidden_layers=[self.embedding_hidden_dim, self.embedding_hidden_dim],
+                                        pre_norm=True),
             embed_global_fn=make_embed_fn(self.embedded_dim, hidden_layers=[self.embedding_hidden_dim // 2,
-                                                                            self.embedding_hidden_dim // 2]),
+                                                                            self.embedding_hidden_dim // 2],
+                                          pre_norm=True),
         )
 
         gat_1 = Transf_GAT(self.embedded_dim, [self.trans_gat_dim, self.trans_gat_dim],
@@ -306,24 +329,30 @@ class PPO_SKIP(nn.Module):
         gat_3 = Transf_GAT(self.embedded_dim, [self.trans_gat_dim, self.trans_gat_dim],
                            [self.trans_gat_dim // 2, self.trans_gat_dim // 2])
 
-        mlp_val = make_mlp(1, hidden_layers=[self.trans_mlp_dim, self.trans_mlp_dim])
-        mlp_pol = make_mlp(self.action_dim, hidden_layers=[self.trans_mlp_dim, self.trans_mlp_dim])
+        deep_set_val = DeepSetsGlobalised(
+            update_node_fn=None,
+            update_global_fn=make_embed_fn(1, hidden_layers=[self.trans_mlp_dim, self.trans_mlp_dim])
+        )
+
+        deep_set_pol = DeepSetsGlobalised(
+            update_node_fn=make_embed_fn(1, hidden_layers=[self.trans_mlp_dim, self.trans_mlp_dim]),
+            update_global_fn=make_embed_fn(1, hidden_layers=[self.trans_mlp_dim, self.trans_mlp_dim])
+        )
+
 
         embedded_graph = embedding_encoder(graph)
         graph_1 = gat_1(embedded_graph)
         graph_2 = gat_2(graph_1)
         graph_3 = gat_3(graph_2)
 
-        graph_concat = jnp.concat([graph_3.globals, graph_3.nodes], axis=0)
-        graph_concat = graph_concat.reshape(-1)
 
-        last_val = mlp_val(graph_concat)
-        val = last_val.squeeze()
+        g_val = deep_set_val(graph_3)
+        val = g_val.globals.squeeze()
 
-        last_pol = mlp_pol(graph_concat)
-        squeezed_globals = last_pol.squeeze()
+        g_pol = deep_set_pol(graph_3)
+        pol_unmasked = jnp.concat([g_pol.globals, g_pol.nodes], axis=0).squeeze()
         full_inf = jnp.full((self.action_dim,), -jnp.inf)
-        masked_globals = jax.lax.select(mask, squeezed_globals, full_inf)
+        masked_globals = jax.lax.select(mask, pol_unmasked, full_inf)
         pi = distrax.Categorical(logits=masked_globals)
 
         return val, pi
