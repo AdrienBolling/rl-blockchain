@@ -131,7 +131,7 @@ def make_attention_logit_fn(latent_size, hidden_layers: list[int] | None = None)
     if hidden_layers is None:
         hidden_layers = [latent_size]
     # hidden_layers.append(1)  # Ensure the last layer is of size 1 for logits
-    hidden_layers = (*hidden_layers,1)
+    hidden_layers = (*hidden_layers, 1)
     return make_embed_fn(latent_size, hidden_layers=hidden_layers)
 
 
@@ -302,7 +302,8 @@ class PPO_SKIP(nn.Module):
     embedded_dim: int = 10
     embedding_hidden_dim: int = 32
     trans_gat_dim: int = 64
-    trans_mlp_dim: int = 64
+    trans_mlp_dim_val: int = 64
+    trans_mlp_dim_pol: int = 128
 
     @nn.compact
     def __call__(self, graph: jr.GraphsTuple):
@@ -331,20 +332,20 @@ class PPO_SKIP(nn.Module):
 
         deep_set_val = DeepSetsGlobalised(
             update_node_fn=None,
-            update_global_fn=make_embed_fn(1, hidden_layers=[self.trans_mlp_dim, self.trans_mlp_dim])
+            update_global_fn=make_embed_fn(1, hidden_layers=[self.trans_mlp_dim_val, self.trans_mlp_dim_val])
         )
 
         deep_set_pol = DeepSetsGlobalised(
-            update_node_fn=make_embed_fn(1, hidden_layers=[self.trans_mlp_dim, self.trans_mlp_dim]),
-            update_global_fn=make_embed_fn(1, hidden_layers=[self.trans_mlp_dim, self.trans_mlp_dim])
+            update_node_fn=make_embed_fn(1, hidden_layers=[self.trans_mlp_dim_pol, self.trans_mlp_dim_pol,
+                                                           self.trans_mlp_dim_pol]),
+            update_global_fn=make_embed_fn(1, hidden_layers=[self.trans_mlp_dim_pol, self.trans_mlp_dim_pol,
+                                                             self.trans_mlp_dim_pol])
         )
-
 
         embedded_graph = embedding_encoder(graph)
         graph_1 = gat_1(embedded_graph)
         graph_2 = gat_2(graph_1)
         graph_3 = gat_3(graph_2)
-
 
         g_val = deep_set_val(graph_3)
         val = g_val.globals.squeeze()
