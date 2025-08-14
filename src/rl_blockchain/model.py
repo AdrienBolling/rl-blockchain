@@ -299,9 +299,9 @@ def DeepSetsGlobalised(
 
 class PPO_SKIP(nn.Module):
     action_dim: int
-    embedded_dim: int = 10
+    embedded_dim: int = 16
     embedding_hidden_dim: int = 32
-    trans_gat_dim: int = 64
+    trans_gat_dim: int = 128
     trans_mlp_dim_val: int = 64
     trans_mlp_dim_pol: int = 128
 
@@ -317,18 +317,17 @@ class PPO_SKIP(nn.Module):
             embed_node_fn=make_embed_fn(self.embedded_dim,
                                         hidden_layers=[self.embedding_hidden_dim, self.embedding_hidden_dim],
                                         pre_norm=True),
-            embed_global_fn=make_embed_fn(self.embedded_dim, hidden_layers=[self.embedding_hidden_dim // 2,
-                                                                            self.embedding_hidden_dim // 2],
+            embed_global_fn=make_embed_fn(self.embedded_dim, hidden_layers=[self.embedding_hidden_dim,
+                                                                            self.embedding_hidden_dim],
                                           pre_norm=True),
         )
 
         gat_1 = Transf_GAT(self.embedded_dim, [self.trans_gat_dim, self.trans_gat_dim],
-                           [self.trans_gat_dim // 2, self.trans_gat_dim // 2])
+                           [self.trans_gat_dim, self.trans_gat_dim])
         gat_2 = Transf_GAT(self.embedded_dim, [self.trans_gat_dim, self.trans_gat_dim],
-                           [self.trans_gat_dim // 2, self.trans_gat_dim // 2])
-
+                           [self.trans_gat_dim, self.trans_gat_dim])
         gat_3 = Transf_GAT(self.embedded_dim, [self.trans_gat_dim, self.trans_gat_dim],
-                           [self.trans_gat_dim // 2, self.trans_gat_dim // 2])
+                           [self.trans_gat_dim, self.trans_gat_dim])
 
         deep_set_val = DeepSetsGlobalised(
             update_node_fn=None,
