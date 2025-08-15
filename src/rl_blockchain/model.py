@@ -322,6 +322,15 @@ class PPO_SKIP(nn.Module):
                                           pre_norm=True),
         )
 
+        embedding_decoder = jr.GraphMapFeatures(
+            embed_edge_fn=make_embed_fn(1, hidden_layers=[self.embedding_hidden_dim, self.embedding_hidden_dim],
+                                        pre_norm=True),
+            embed_node_fn=make_embed_fn(2, hidden_layers=[self.embedding_hidden_dim, self.embedding_hidden_dim],
+                                        pre_norm=True),
+            embed_global_fn=make_embed_fn(1, hidden_layers=[self.embedding_hidden_dim, self.embedding_hidden_dim],
+                                          pre_norm=True),
+        )
+
         gat_1 = Transf_GAT(self.embedded_dim, [self.trans_gat_dim, self.trans_gat_dim],
                            [self.trans_gat_dim, self.trans_gat_dim])
         gat_2 = Transf_GAT(self.embedded_dim, [self.trans_gat_dim, self.trans_gat_dim],
@@ -335,13 +344,16 @@ class PPO_SKIP(nn.Module):
         )
 
         deep_set_pol = DeepSetsGlobalised(
-            update_node_fn=make_embed_fn(self.embedding_hidden_dim, hidden_layers=[self.trans_mlp_dim_pol, self.trans_mlp_dim_pol,
-                                                           self.trans_mlp_dim_pol]),
-            update_global_fn=make_embed_fn(self.embedding_hidden_dim, hidden_layers=[self.trans_mlp_dim_pol, self.trans_mlp_dim_pol,
-                                                             self.trans_mlp_dim_pol])
+            update_node_fn=make_embed_fn(self.embedding_hidden_dim,
+                                         hidden_layers=[self.trans_mlp_dim_pol, self.trans_mlp_dim_pol,
+                                                        self.trans_mlp_dim_pol]),
+            update_global_fn=make_embed_fn(self.embedding_hidden_dim,
+                                           hidden_layers=[self.trans_mlp_dim_pol, self.trans_mlp_dim_pol,
+                                                          self.trans_mlp_dim_pol])
         )
 
-        mlp_pol = make_mlp(self.action_dim, hidden_layers = [self.trans_mlp_dim_pol, self.trans_mlp_dim_pol], pre_norm=True)
+        # mlp_pol = make_mlp(self.action_dim, hidden_layers=[self.trans_mlp_dim_pol, self.trans_mlp_dim_pol],
+        #                   pre_norm=True)
 
         embedded_graph = embedding_encoder(graph)
         graph_1 = gat_1(embedded_graph)
@@ -352,12 +364,14 @@ class PPO_SKIP(nn.Module):
         val = g_val.globals.squeeze()
 
         g_pol = deep_set_pol(graph_3)
-        # pol_unmasked = jnp.concat([g_pol.globals, g_pol.nodes], axis=0).squeeze()
-        pol_gnn = jnp.concat([g_pol.globals, g_pol.nodes], axis=0).reshape(-1)
-        pol_unmasked = mlp_pol(pol_gnn).squeeze()
+        pol_unmasked = jnp.concat([g_pol.globals, g_pol.nodes], axis=0).squeeze()
+        # pol_gnn = jnp.concat([g_pol.globals, g_pol.nodes], axis=0).reshape(-1)
+        # pol_unmasked = mlp_pol(pol_gnn).squeeze()
 
         full_inf = jnp.full((self.action_dim,), -jnp.inf)
         masked_globals = jax.lax.select(mask, pol_unmasked, full_inf)
         pi = distrax.Categorical(logits=masked_globals)
 
-        return val, pi
+        decoded_embedded_graph = embedding_decoder(embedded_graph)
+
+        return val, pi, decoded_embedded_graph

@@ -44,7 +44,7 @@ def rollout(key_input, env: environment.Environment,
         """lax.scan compatible step transition in jax env."""
         obs, state, key = state_input
         next_key, key_step, key_net = jax.random.split(key, 3)
-        value, action_distribution = model.apply(ppo_state.params, obs, )
+        value, action_distribution, _ = model.apply(ppo_state.params, obs)
         action = action_distribution.sample(seed=key_net)
         logp = action_distribution.log_prob(action)
 
@@ -64,7 +64,7 @@ def rollout(key_input, env: environment.Environment,
         steps_in_episode
     )
 
-    last_value, _ = model.apply(ppo_state.params, obs_end)
+    last_value, _, _ = model.apply(ppo_state.params, obs_end)
     # Return masked sum of rewards accumulated by agent in episode
     observations, actions, logps, rewards, dones, values, infos = trajs
     return observations, actions, logps, rewards, dones, values, last_value, infos
@@ -83,15 +83,17 @@ def rollout_eval(key_input, env: environment.Environment,
         """lax.scan compatible step transition in jax env."""
         obs, state, key = state_input
         next_key, key_step, key_net = jax.random.split(key, 3)
-        _, action_distribution = model.apply(ppo_state.params, obs)
+        _, action_distribution, obs_pred = model.apply(ppo_state.params, obs)
         action = action_distribution.mode()
 
         next_obs, next_state, reward, done, infos = env.step(
             key_step, state, action, env_params
         )
 
+        mse_error = mse_loss_graph(obs_pred, obs)
+
         carry = [next_obs, next_state, next_key]
-        traj = (obs, action, reward, done, infos)
+        traj = (obs, action, reward, done, infos, mse_error)
         return carry, traj
 
     # Scan over episode step loop
@@ -103,8 +105,8 @@ def rollout_eval(key_input, env: environment.Environment,
     )
 
     # Return masked sum of rewards accumulated by agent in episode
-    observations, actions, rewards, dones, infos = trajs
-    return observations, actions, rewards, dones, infos
+    observations, actions, rewards, dones, infos, mse_errors = trajs
+    return observations, actions, rewards, dones, infos, mse_errors
 
 
 @jax.jit
@@ -126,6 +128,16 @@ def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
     return advs[::-1]
 
 
+def mse_loss_graph(graph_pred: jr.GraphsTuple, graph_target: jr.GraphsTuple) -> jax.Array:
+    """
+    Computes the mean squared error loss between predicted and target graphs.
+    """
+    node_loss = optax.l2_loss(graph_pred.nodes.squeeze(), graph_target.nodes).mean()
+    edge_loss = optax.l2_loss(graph_pred.edges.squeeze(), graph_target.edges).mean()
+    global_loss = optax.l2_loss(graph_pred.globals.squeeze(axis=0), graph_target.globals).mean()
+    return node_loss + edge_loss + global_loss
+
+
 @partial(jax.jit, static_argnames=('model_apply', 'model_optimizer', 'clip_ratio'))
 def update_ppo(
         ppo_state: PPOState,
@@ -139,8 +151,9 @@ def update_ppo(
         model_optimizer,
         clip_ratio: float = 0.2,
         value_coef: float = 0.5,
-        entropy_coef: float = 0.01
-) -> tuple[PPOState, float, float, float, float, float, dict[str, Any]]:
+        entropy_coef: float = 0.01,
+        encoder_loss_coef: float = 0.1
+) -> tuple[PPOState, float, float, float, float, float, float, dict[str, Any]]:
     """
     Performs a PPO update over a batch of transitions.
 
@@ -175,7 +188,7 @@ def update_ppo(
     def loss_fn(model_params):
         # compute per-sample losses
         def sample_loss(m_params, graph, a, old_lp, ret, adv, old_val):
-            value_pred, dist = model_apply(m_params, graph)
+            value_pred, dist, decoded_graph = model_apply(m_params, graph)
             new_lp = dist.log_prob(a)
             ratio = jnp.exp(new_lp - old_lp)
 
@@ -189,18 +202,20 @@ def update_ppo(
             value_loss_clipped = jnp.square(value_pred_clipped - ret)
             value_loss = jnp.maximum(value_loss, value_loss_clipped)
 
-            total_loss = policy_loss + value_coef * value_loss - entropy * entropy_coef
+            encoder_loss = mse_loss_graph(decoded_graph, graph)
+
+            total_loss = policy_loss + value_coef * value_loss - entropy * entropy_coef + encoder_loss_coef * encoder_loss
 
             approx_kl = ratio - 1.0 - (new_lp - old_lp)
             is_clipped = (jnp.abs(ratio - 1.0) > clip_ratio).astype(jnp.float32)
 
-            return total_loss, (policy_loss, value_loss, entropy, approx_kl, is_clipped)
+            return total_loss, (policy_loss, value_loss, encoder_loss, entropy, approx_kl, is_clipped)
 
         # Vectorize over batch
-        total_loss, (pl_batch, vl_batch, ent_batch, kl_batch, cf_batch) = jax.vmap(
+        total_loss, (pl_batch, vl_batch, enc_batch, ent_batch, kl_batch, cf_batch) = jax.vmap(
             sample_loss,
             in_axes=(None, 0, 0, 0, 0, 0, 0),
-            out_axes=(0, (0, 0, 0, 0, 0))
+            out_axes=(0, (0, 0, 0, 0, 0, 0))
         )(
             model_params,
             observation,
@@ -214,14 +229,15 @@ def update_ppo(
         mean_loss = jnp.mean(total_loss)
         mean_pl_batch = jnp.mean(pl_batch)
         mean_vl_batch = jnp.mean(vl_batch)
+        mean_enc_batch = jnp.mean(enc_batch)
         mean_ent_batch = jnp.mean(ent_batch)
         mean_kl_batch = jnp.mean(kl_batch)
         mean_cf_batch = jnp.mean(cf_batch)
         # return mean total_loss as loss, and policy/value losses as aux
-        return mean_loss, (mean_pl_batch, mean_vl_batch, mean_ent_batch, mean_kl_batch, mean_cf_batch)
+        return mean_loss, (mean_pl_batch, mean_vl_batch, mean_enc_batch, mean_ent_batch, mean_kl_batch, mean_cf_batch)
 
     # Compute gradients
-    (loss_val, (mean_pl, mean_vl, mean_ent, mean_kl, mean_cf)), grads = jax.value_and_grad(
+    (loss_val, (mean_pl, mean_vl, mean_enc, mean_ent, mean_kl, mean_cf)), grads = jax.value_and_grad(
         loss_fn, has_aux=True
     )(ppo_state.params)
 
@@ -233,7 +249,7 @@ def update_ppo(
 
     new_state = PPOState(new_model_params, new_model_opt_state, ppo_state.rng_key)
 
-    return new_state, mean_pl, mean_vl, mean_ent, mean_kl, mean_cf, info_coef
+    return new_state, mean_pl, mean_vl, mean_enc, mean_ent, mean_kl, mean_cf, info_coef
 
 
 def compute_avg_value(infos: dict[str, jax.Array]) -> dict[str, jax.Array]:
@@ -340,7 +356,7 @@ def train_ppo(
             batch_graphs = jax.tree.map(lambda x: x[batch_idx], flat_graphs)
 
             # Now call update_ppo with the exact signature you defined:
-            ppo_state, policy_loss, value_loss, entropy, approx_kl, clip_frac, info_coef = update_ppo(
+            ppo_state, policy_loss, value_loss, encoder_loss, entropy, approx_kl, clip_frac, info_coef = update_ppo(
                 ppo_state,
                 batch_graphs,  # env_states: a GraphsTuple PyTree
                 flat_a[batch_idx],  # actions
@@ -356,7 +372,7 @@ def train_ppo(
         print(f"Policy: {pi.logits}, Value: {v}")
         ppo_state = ppo_state.replace(rng_key=new_ppo_key)
         print(
-            f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}, Entropy={entropy:.3f}, approxKL={approx_kl:.3f}, clipFract={clip_frac:.3f}, info_coef={info_coef}")
+            f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}, Encoder Loss = {encoder_loss:.3f}, Entropy={entropy:.3f}, approxKL={approx_kl:.3f}, clipFract={clip_frac:.3f}, info_coef={info_coef}")
         print(f"rewards : {rews.sum():.3f}, longueur {rews.shape}, dones {dones.sum():.3f}")
         # print("Infos -> ", infos)
         # string_builder = ""
@@ -472,7 +488,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
         logger.info(f"Epoch {epoch}: Processing batch {start // batch_size + 1} / {perm.shape[0] // batch_size + 1}")
         idx = perm[start: start + batch_size]
         batch_graphs = jax.tree.map(lambda x: x[idx], flat_graphs)
-        ppo_state, policy_loss, value_loss, entropy, approx_kl, clip_fract, info_coef = update_ppo(
+        ppo_state, policy_loss, value_loss, encoder_loss, entropy, approx_kl, clip_fract, info_coef = update_ppo(
             ppo_state,
             batch_graphs,
             flat_a[idx],
@@ -489,6 +505,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
         info_train = {
             "policy_loss": policy_loss,
             "value_loss": value_loss,
+            "encoder_loss": encoder_loss,
             "entropy": entropy,
             "approx_kl": approx_kl,
             "clip_fract": clip_fract,
@@ -543,6 +560,7 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
     all_rewards = []
     all_dones = []
     all_infos = []
+    all_mse_error = []
 
     num_batches = (num_episodes + batch_size - 1) // batch_size
 
@@ -554,16 +572,20 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
         subkeys_params = jax.random.split(param_key, batch_size)
 
         params_list = params_map(subkeys_params)
-        _, _, rews, dones, infos = vm_rollouts(subkeys, params_list)
+        _, _, rews, dones, infos, mse_errors = vm_rollouts(subkeys, params_list)
 
         all_rewards.append(rews)
         all_dones.append(dones)
         all_infos.append(infos)
+        all_mse_error.append(mse_errors)
 
     # Concaténer les résultats
     all_rewards = jnp.concatenate(all_rewards, axis=0)
     all_dones = jnp.concatenate(all_dones, axis=0)
     all_infos = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *all_infos)
+    all_mse_error = jnp.concatenate(all_mse_error, axis=0)
+
+    all_infos["mse_error"] = all_mse_error
 
     logger.info(f"Evaluated {num_episodes} episodes in {num_batches} batches of at most {batch_size} envs.")
 
