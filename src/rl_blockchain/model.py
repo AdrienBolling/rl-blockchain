@@ -344,10 +344,10 @@ class PPO_SKIP(nn.Module):
         )
 
         deep_set_pol = DeepSetsGlobalised(
-            update_node_fn=make_embed_fn(self.embedding_hidden_dim,
+            update_node_fn=make_embed_fn(1,
                                          hidden_layers=[self.trans_mlp_dim_pol, self.trans_mlp_dim_pol,
                                                         self.trans_mlp_dim_pol]),
-            update_global_fn=make_embed_fn(self.embedding_hidden_dim,
+            update_global_fn=make_embed_fn(1,
                                            hidden_layers=[self.trans_mlp_dim_pol, self.trans_mlp_dim_pol,
                                                           self.trans_mlp_dim_pol])
         )
