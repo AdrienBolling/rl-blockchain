@@ -297,6 +297,20 @@ def DeepSetsGlobalised(
         aggregate_nodes_for_globals_fn=aggregate_nodes_for_globals_fn)
 
 
+def activation_embedded_graph(decoded_embedded_graph: jr.GraphsTuple, max_nb_val: int, box_clip: float,
+                              T: float = 10):
+    chosen_val = jax.nn.sigmoid(decoded_embedded_graph.nodes[:, 0])
+    nb_val_estimated = jax.nn.softplus(decoded_embedded_graph.globals / T).clip(0, max_nb_val)
+    participation_estimated = (jax.nn.sigmoid(decoded_embedded_graph.nodes[:, 1]) - 0.5) * 2 * box_clip
+    edges_estimated = jax.nn.sigmoid(decoded_embedded_graph.edges)
+
+    nodes_updated = jnp.column_stack([chosen_val, participation_estimated])
+
+    decoded_embedded_graph = decoded_embedded_graph._replace(nodes=nodes_updated, globals=nb_val_estimated,
+                                                             edges=edges_estimated)
+    return decoded_embedded_graph
+
+
 class PPO_SKIP(nn.Module):
     action_dim: int
     embedded_dim: int = 16
@@ -304,6 +318,7 @@ class PPO_SKIP(nn.Module):
     trans_gat_dim: int = 128
     trans_mlp_dim_val: int = 64
     trans_mlp_dim_pol: int = 128
+    box_clip = 4
 
     @nn.compact
     def __call__(self, graph: jr.GraphsTuple):
@@ -373,5 +388,6 @@ class PPO_SKIP(nn.Module):
         pi = distrax.Categorical(logits=masked_globals)
 
         decoded_embedded_graph = embedding_decoder(embedded_graph)
+        decoded_embedded_graph = activation_embedded_graph(decoded_embedded_graph, self.action_dim - 1, self.box_clip)
 
         return val, pi, decoded_embedded_graph
