@@ -585,11 +585,10 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
     all_infos = jax.tree_util.tree_map(lambda *xs: jnp.concatenate(xs, axis=0), *all_infos)
     all_mse_error = jnp.concatenate(all_mse_error, axis=0)
 
-    all_infos["mse_error"] = all_mse_error
-
     logger.info(f"Evaluated {num_episodes} episodes in {num_batches} batches of at most {batch_size} envs.")
 
     metrics = log_fn(all_infos, all_rewards, all_dones)
+    metrics["mse_error"] = all_mse_error
     metrics["avg_returns_episode"] = all_rewards.sum(axis=1).mean()
 
     sub_rewards = all_rewards.mean(axis=1)
