@@ -125,8 +125,8 @@ def _parse_args() -> Namespace:
         "--gat-arch",
         nargs="+",
         type=int,
-        default=[64, 64, 64],
-        help="GAT architecture as three space separated values. Default is [64, 64, 64].",
+        default=[64, 32, 16],
+        help="GAT architecture as three space separated values. Default is [64, 32, 16].",
     )
 
     ppo_parser.add_argument(
