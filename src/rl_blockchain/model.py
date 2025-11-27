@@ -124,15 +124,11 @@ def attention_reduce_fn(edges: jnp.ndarray, attention: jnp.ndarray):
     return edges * attention
 
 
-class PPO_NET_BACK(nn.Module):
-    action_dim: int
+class PPOBackbone(nn.Module):
     backbone_gat_dim: int
-    actor_gcn_dim: int
-    critic_gnn_dim: int
 
     @nn.compact
     def __call__(self, graph: jr.GraphsTuple):
-        mask = compute_legal_actions_obs(graph)
         graph = graph._replace(edges=graph.edges[:, None], globals=graph.globals[:, None])
 
         projector = jr.GraphMapFeatures(
@@ -154,8 +150,7 @@ class PPO_NET_BACK(nn.Module):
             attention_reduce_fn=attention_reduce_fn,
             aggregate_edges_for_nodes_fn=segment_sum,
             aggregate_nodes_for_globals_fn=segment_sum,
-            aggregate_edges_for_globals_fn=segment_sum,
-        )
+            aggregate_edges_for_globals_fn=segment_sum)
 
         back_gat_2 = jr.GraphNetGAT(
             update_edge_fn=make_update_fn(
@@ -170,54 +165,76 @@ class PPO_NET_BACK(nn.Module):
             attention_reduce_fn=attention_reduce_fn,
             aggregate_edges_for_nodes_fn=segment_sum,
             aggregate_nodes_for_globals_fn=segment_sum,
-            aggregate_edges_for_globals_fn=segment_sum,
-        )
+            aggregate_edges_for_globals_fn=segment_sum)
 
-        actor_gcn_1 = jr.GraphConvolution(
+        gp = projector(graph)
+        g1 = back_gat_1(gp)
+        g1 = g1._replace(
+            nodes=g1.nodes + gp.nodes,
+            edges=g1.edges + gp.edges,
+            globals=g1.globals + gp.globals)
+
+        g2 = back_gat_2(g1)
+        g2 = g2._replace(
+            nodes=g2.nodes + g1.nodes,
+            edges=g2.edges + g1.edges,
+            globals=g2.globals + g1.globals)
+
+        return g2
+
+
+class PPOActorHead(nn.Module):
+    action_dim: int
+    actor_gcn_dim: int
+
+    @nn.compact
+    def __call__(self, shared_graph, mask):
+        g1 = jr.GraphConvolution(
             update_node_fn=make_update_fn([self.actor_gcn_dim, self.actor_gcn_dim * 4, self.actor_gcn_dim]),
             add_self_edges=True,
             symmetric_normalization=True
-        )
+        )(shared_graph)
 
-        actor_gcn_2 = jr.GraphConvolution(
+        g2 = jr.GraphConvolution(
             update_node_fn=make_update_fn([self.actor_gcn_dim, self.actor_gcn_dim * 4, self.actor_gcn_dim, 1],
                                           last_activation=False),
-        )
+        )(g1)
 
-        critic_graphnet = jr.GraphNetwork(
+        logits = jnp.concatenate([jnp.zeros(1), g2.nodes.squeeze()]).squeeze()
+
+        full_inf = jnp.full((self.action_dim,), -jnp.inf)
+        masked_logits = jax.lax.select(mask, logits, full_inf)
+
+        return distrax.Categorical(logits=masked_logits)
+
+
+class PPOCriticHead(nn.Module):
+    critic_gnn_dim: int
+
+    @nn.compact
+    def __call__(self, shared_graph):
+        crit = jr.GraphNetwork(
             update_edge_fn=make_update_fn([self.critic_gnn_dim, self.critic_gnn_dim]),
             update_node_fn=make_update_fn([self.critic_gnn_dim, self.critic_gnn_dim]),
             update_global_fn=make_update_fn([self.critic_gnn_dim * 2, self.critic_gnn_dim, 1], last_activation=False),
             aggregate_edges_for_nodes_fn=segment_sum,
             aggregate_nodes_for_globals_fn=segment_sum,
-        )
+        )(shared_graph)
+        return crit.globals.squeeze()
 
-        graph_projected = projector(graph)
 
-        shared_graph_1 = back_gat_1(graph_projected)
-        shared_graph_1 = shared_graph_1._replace(
-            nodes=shared_graph_1.nodes + graph_projected.nodes,
-            edges=shared_graph_1.edges + graph_projected.edges,
-            globals=shared_graph_1.globals + graph_projected.globals,
-        )
-        shared_graph_2 = back_gat_2(shared_graph_1)
-        shared_graph_2 = shared_graph_2._replace(
-            nodes=shared_graph_2.nodes + shared_graph_1.nodes,
-            edges=shared_graph_2.edges + shared_graph_1.edges,
-            globals=shared_graph_2.globals + shared_graph_1.globals,
-        )
+class PPOSeparate(nn.Module):
+    action_dim: int
+    backbone_gat_dim: int
+    actor_gcn_dim: int
+    critic_gnn_dim: int
 
-        act_graph_1 = actor_gcn_1(shared_graph_2)
-        act_graph = actor_gcn_2(act_graph_1)
+    @nn.compact
+    def __call__(self, graph):
+        mask = compute_legal_actions_obs(graph)
 
-        crit_graph = critic_graphnet(shared_graph_2)
-        val = crit_graph.globals.squeeze()
+        shared = PPOBackbone(self.backbone_gat_dim)(graph)
+        pi = PPOActorHead(self.action_dim, self.actor_gcn_dim)(shared, mask)
+        v = PPOCriticHead(self.critic_gnn_dim)(shared)
 
-        full_pol = jnp.concatenate([jnp.zeros(1), act_graph.nodes.squeeze()]).squeeze()
-
-        full_inf = jnp.full((self.action_dim,), -jnp.inf)
-        masked_globals = jax.lax.select(mask, full_pol, full_inf)
-
-        pi = distrax.Categorical(logits=masked_globals)
-
-        return val, pi
+        return v, pi
