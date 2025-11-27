@@ -11,6 +11,7 @@ from rl_blockchain.scripts.env_factory import GenericEnvFactory
 key = jax.random.PRNGKey(0)
 
 key_param, key_model, key_obs, key = jax.random.split(key, 4)
+size_batch = 8
 
 lr = 1e-3
 config = {"gat_arch": [16, 8, 4], "voting_nodes": 4, "ref_map_file": "grid/grid_7_nodes.json",
@@ -77,6 +78,20 @@ def create_peerwise_pred(env: BlockchainEnv, params: EnvParams, init_state: EnvS
     return list_peer
 
 
+def build_balanced_batch(list_peerwise, batch_size, key):
+    n = len(list_peerwise)
+
+    # indices répétés pour atteindre batch_size
+    reps = jax.random.randint(key, shape=(batch_size,), minval=0, maxval=n)
+
+    obs_batch = [list_peerwise[int(i)][0] for i in reps]
+    batched_obs = jax.tree.map(lambda *xs: jnp.stack(xs), *obs_batch)
+    vals_batch = jnp.array([list_peerwise[int(i)][1][0] for i in reps], dtype=jnp.float32)
+    probs_batch = jnp.array([list_peerwise[int(i)][1][1] for i in reps], dtype=jnp.float32)
+
+    return batched_obs, (vals_batch, probs_batch)
+
+
 if __name__ == '__main__':
     model, env, _, _, _ = GenericEnvFactory.create("blockenv_close_map", key_param, config)
 
@@ -89,34 +104,41 @@ if __name__ == '__main__':
         params=model_vars,
         tx=tx)
 
-
-    def loss_fn(params, obs: jr.GraphsTuple, target):
-        prediction = state.apply_fn(params, obs)
-
-        loss = l2_loss_graph(prediction, target)
-        return loss
-
-
-    grad_fn = jax.jit(jax.value_and_grad(loss_fn))
-
     list_peerwise = create_peerwise_pred(env, env.default_params, first_state)
 
+    obs_batch, (vals_batch, probs_batch) = build_balanced_batch(list_peerwise, batch_size=size_batch, key=key)
 
     # Simple training loop to overfit on the synthetic peerwise dataset
     num_epochs = 5000
 
+
     @jax.jit
-    def train_step(state: TrainState, obs: jr.GraphsTuple, target):
-        loss, grads = grad_fn(state.params, obs, target)
+    def loss_batch(params, obs_batch, vals_batch, probs_batch):
+
+        def loss_fn(obs: jr.GraphsTuple, val, prob):
+            prediction = model.apply(params, obs)
+            return l2_loss_graph(prediction, (val, prob))
+
+        batched_loss = jax.vmap(loss_fn)(obs_batch, vals_batch, probs_batch)
+        return batched_loss.mean()
+
+
+    grad_loss_fn = jax.value_and_grad(loss_batch)
+
+
+    def train_step(state: TrainState):
+
+        loss, grads = grad_loss_fn(state.params, obs_batch, vals_batch, probs_batch)
         state = state.apply_gradients(grads=grads)
         return state, loss
+
 
     for epoch in range(num_epochs):
         total_loss = 0.0
 
         # loop on the artificial supervised pairs
         for (obs_i, target_i) in list_peerwise:
-            state, loss = train_step(state, obs_i, target_i)
+            state, loss = train_step(state)
             total_loss += loss
 
         if epoch % 200 == 0:
