@@ -46,9 +46,9 @@ class PPOSeparate_Test(nn.Module):
             update_edge_fn=make_update_fn(
                 [self.backbone_gat_dim, self.backbone_gat_dim * 2, self.backbone_gat_dim]),
             update_node_fn=make_update_fn(
-                [self.backbone_gat_dim, self.backbone_gat_dim * 2, 1], last_activation=False),
+                [self.backbone_gat_dim, self.backbone_gat_dim]),
             update_global_fn=make_update_fn(
-                [self.backbone_gat_dim, 1], last_activation=False),
+                [self.backbone_gat_dim]),
             attention_logit_fn=make_update_fn(
                 [self.backbone_gat_dim, self.backbone_gat_dim * 2, self.backbone_gat_dim, 1],
                 last_activation=False),
@@ -57,18 +57,39 @@ class PPOSeparate_Test(nn.Module):
             aggregate_nodes_for_globals_fn=segment_sum,
             aggregate_edges_for_globals_fn=segment_sum)
 
+        gate_3 = jr.GraphNetwork(
+            update_edge_fn=None,
+            update_node_fn=make_update_fn(
+                [1], last_activation=False),
+            update_global_fn=make_update_fn(
+                [1], last_activation=False),
+            aggregate_edges_for_nodes_fn=segment_sum,
+            aggregate_nodes_for_globals_fn=segment_sum,
+            aggregate_edges_for_globals_fn=segment_sum)
+
         g_p = projector(graph)
         g_1 = gate_1(g_p)
+        g_1 = g_1._replace(
+            nodes=g_1.nodes + g_p.nodes,
+            edges=g_1.edges + g_p.edges,
+            globals=g_1.globals + g_p.globals
+        )
         g_2 = gate_2(g_1)
+        g_2 = g_2._replace(
+            nodes=g_2.nodes + g_1.nodes,
+            edges=g_2.edges + g_1.edges,
+            globals=g_2.globals + g_1.globals
+        )
 
-        logits = jnp.concatenate([jnp.zeros(1), g_2.nodes.squeeze()]).squeeze()
+        g_3 = gate_3(g_2)
+
+        logits = jnp.concatenate([jnp.zeros(1), g_3.nodes.squeeze()]).squeeze()
 
         full_inf = jnp.full((self.action_dim,), -jnp.inf)
         masked_logits = jax.lax.select(mask, logits, full_inf)
 
         pi = distrax.Categorical(logits=masked_logits)
 
-        v = g_2.globals.squeeze()
-
+        v = g_3.globals.squeeze()
 
         return v, pi
