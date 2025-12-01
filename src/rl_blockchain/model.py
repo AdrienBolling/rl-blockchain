@@ -189,18 +189,29 @@ class PPOActorHead(nn.Module):
 
     @nn.compact
     def __call__(self, shared_graph, mask):
-        g1 = jr.GraphConvolution(
-            update_node_fn=make_update_fn([self.actor_gcn_dim, self.actor_gcn_dim * 4, self.actor_gcn_dim]),
-            add_self_edges=True,
-            symmetric_normalization=True
-        )(shared_graph)
+        # gat_gate = jr.GraphNetGAT(
+        #     update_edge_fn=make_update_fn(
+        #         [self.actor_gcn_dim, self.actor_gcn_dim * 2, self.actor_gcn_dim]),
+        #     update_node_fn=make_update_fn(
+        #         [self.actor_gcn_dim, self.actor_gcn_dim * 2, self.actor_gcn_dim]),
+        #     update_global_fn=make_update_fn(
+        #         [self.actor_gcn_dim * 2, self.actor_gcn_dim]),
+        #     attention_logit_fn=make_update_fn(
+        #         [self.actor_gcn_dim, self.actor_gcn_dim * 2, self.actor_gcn_dim, 1],
+        #         last_activation=False),
+        #     attention_reduce_fn=attention_reduce_fn,
+        #     aggregate_edges_for_nodes_fn=segment_sum,
+        #     aggregate_nodes_for_globals_fn=segment_sum,
+        #     aggregate_edges_for_globals_fn=segment_sum)
 
-        g2 = jr.GraphConvolution(
-            update_node_fn=make_update_fn([self.actor_gcn_dim, self.actor_gcn_dim * 4, self.actor_gcn_dim, 1],
-                                          last_activation=False),
-        )(g1)
+        graph_pi = jr.GraphNetwork(
+            update_edge_fn=None,
+            update_node_fn=make_update_fn(
+                [self.actor_gcn_dim, self.actor_gcn_dim * 2, self.actor_gcn_dim, 1], last_activation=False),
+            update_global_fn=None,
+            aggregate_edges_for_nodes_fn=segment_sum)(shared_graph)
 
-        logits = jnp.concatenate([jnp.zeros(1), g2.nodes.squeeze()]).squeeze()
+        logits = jnp.concatenate([jnp.zeros(1), graph_pi.nodes.squeeze()]).squeeze()
 
         full_inf = jnp.full((self.action_dim,), -jnp.inf)
         masked_logits = jax.lax.select(mask, logits, full_inf)

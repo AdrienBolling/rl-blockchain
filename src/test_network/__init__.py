@@ -100,7 +100,7 @@ if __name__ == '__main__':
     _, env, _, _, _ = GenericEnvFactory.create("blockenv_close_map", key_param, config)
 
     backbone_gat_dim, actor_gcn_dim, critic_gnn_dim = config["gat_arch"]
-    model = PPOSeparate_Test(env.num_actions, backbone_gat_dim, actor_gcn_dim, critic_gnn_dim)
+    model = PPOSeparate(env.num_actions, backbone_gat_dim, actor_gcn_dim, critic_gnn_dim)
 
     first_obs, first_state = env.reset(key_obs, env.default_params)
     tx = optax.adam(lr)
