@@ -6,7 +6,9 @@ import optax
 from flax.training.train_state import TrainState
 
 from rl_blockchain.BlockEnv import EnvParams, EnvState, BlockchainEnv
+from rl_blockchain.model import PPOSeparate
 from rl_blockchain.scripts.env_factory import GenericEnvFactory
+from rl_blockchain.sub_model_test import PPOSeparate_Test
 
 key = jax.random.PRNGKey(0)
 
@@ -20,11 +22,11 @@ config = {"gat_arch": [16, 8, 4], "voting_nodes": 4, "ref_map_file": "grid/grid_
 
 def l2_loss_graph(pred: tuple[jax.Array, distrax.Categorical], target: tuple[jax.Array, jax.Array]) -> (jax.Array, jax.Array,jax.Array):
     loss_values, loss_probs = optax.l2_loss(pred[0], target[0]), optax.l2_loss(pred[1].probs, target[1])
-    loss_values = jnp.array(0.0)
-    return loss_values + loss_probs.sum()*100, loss_values, loss_probs.sum()
+    # loss_values = jnp.array(0.0)
+    return loss_values + loss_probs.sum() * 100, loss_values, loss_probs.sum()
 
 
-def peerwise_1(params: EnvParams, init_state: EnvState) -> tuple[EnvState, tuple[jax.Array, jax.Array]]:
+def peerwise_1(params: EnvParams, env: BlockchainEnv, init_state: EnvState) -> tuple[jr.GraphsTuple, tuple[jax.Array, jax.Array]]:
     nb_nodes = params.network_graph.n_node[0]
 
     node_validator_init = jnp.zeros((nb_nodes,))
@@ -40,12 +42,13 @@ def peerwise_1(params: EnvParams, init_state: EnvState) -> tuple[EnvState, tuple
         time=init_state.time
     )
 
-    prob_1 = action_space_init.at[2].set(1)  # Choosing node 2
+    prob_1 = action_space_init.at[3].set(1)  # Choosing node 2
     value_1 = jnp.array(40, dtype=jnp.float32)
-    return state_1, (value_1, prob_1)
+    obs = env.get_obs(state_1, params)
+    return obs, (value_1, prob_1)
 
 
-def peerwise_2(params: EnvParams, init_state: EnvState) -> tuple[EnvState, tuple[jax.Array, jax.Array]]:
+def peerwise_2(params: EnvParams, env: BlockchainEnv, init_state: EnvState) -> tuple[jr.GraphsTuple, tuple[jax.Array, jax.Array]]:
     nb_nodes = params.network_graph.n_node[0]
 
     node_validator_init = jnp.zeros((nb_nodes,))
@@ -61,9 +64,10 @@ def peerwise_2(params: EnvParams, init_state: EnvState) -> tuple[EnvState, tuple
         time=init_state.time
     )
 
-    prob_1 = action_space_init.at[5].set(1)  # Choosing node 2
+    prob_1 = action_space_init.at[6].set(1)  # Choosing node 2
     value_1 = jnp.array(20, dtype=jnp.float32)
-    return state_1, (value_1, prob_1)
+    obs = env.get_obs(state_1, params)
+    return obs, (value_1, prob_1)
 
 
 def create_peerwise_pred(env: BlockchainEnv, params: EnvParams, init_state: EnvState) -> list[
@@ -72,8 +76,7 @@ def create_peerwise_pred(env: BlockchainEnv, params: EnvParams, init_state: EnvS
     list_fn_gen = [peerwise_1, peerwise_2]
 
     for fn_gen in list_fn_gen:
-        state_i, output_i = fn_gen(params, init_state)
-        obs_i = env.get_obs(state_i, params)
+        obs_i, output_i = fn_gen(params, env, init_state)
         list_peer.append((obs_i, output_i))
 
     return list_peer
@@ -94,7 +97,10 @@ def build_balanced_batch(list_peerwise, batch_size, key):
 
 
 if __name__ == '__main__':
-    model, env, _, _, _ = GenericEnvFactory.create("blockenv_close_map", key_param, config)
+    _, env, _, _, _ = GenericEnvFactory.create("blockenv_close_map", key_param, config)
+
+    backbone_gat_dim, actor_gcn_dim, critic_gnn_dim = config["gat_arch"]
+    model = PPOSeparate_Test(env.num_actions, backbone_gat_dim, actor_gcn_dim, critic_gnn_dim)
 
     first_obs, first_state = env.reset(key_obs, env.default_params)
     tx = optax.adam(lr)
@@ -110,7 +116,7 @@ if __name__ == '__main__':
     obs_batch, (vals_batch, probs_batch) = build_balanced_batch(list_peerwise, batch_size=size_batch, key=key)
 
     # Simple training loop to overfit on the synthetic peerwise dataset
-    num_epochs = 5000
+    num_epochs = 1500
 
 
     @jax.jit
@@ -124,7 +130,7 @@ if __name__ == '__main__':
         return batched_loss.mean(), (val_loss.mean(), probs_loss.mean())
 
 
-    grad_loss_fn = jax.value_and_grad(loss_batch,  has_aux=True)
+    grad_loss_fn = jax.value_and_grad(loss_batch, has_aux=True)
 
 
     def train_step(state: TrainState):
@@ -149,13 +155,15 @@ if __name__ == '__main__':
 
         if epoch % 200 == 0:
             print("Epoch:", epoch, "Loss:", float(total_loss))
-            print("   Value Loss:", float(var_losses), "Prob Loss:", float(prob_losses))
+            print(f"   Value Loss: {float(var_losses):.4f}, Prob Loss: {float(prob_losses):.4f}")
 
     # ---- Verification of overfitting ----
     print("\nFinal evaluation on training examples:")
     for idx, (obs_i, target_i) in enumerate(list_peerwise):
         pred_value, pred_dist = state.apply_fn(state.params, obs_i)
+        error_tot, error_val, error_probs = l2_loss_graph((pred_value, pred_dist), target_i)
         print("Example", idx)
-        print("  Target value:", float(target_i[0]), "Pred value:", float(pred_value))
+        print(f"  Target value: {float(target_i[0]):.4f}, Pred value: {float(pred_value):.4f}")
         print("  Target action:", target_i[1])
         print("  Predicted probs:", pred_dist.probs)
+        print(f"  Total error: {float(error_tot):.4f}, Value error: {float(error_val):.4f}, Probs error: {float(error_probs):.4f}")
