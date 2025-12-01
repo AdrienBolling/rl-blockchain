@@ -11,16 +11,17 @@ from rl_blockchain.scripts.env_factory import GenericEnvFactory
 key = jax.random.PRNGKey(0)
 
 key_param, key_model, key_obs, key = jax.random.split(key, 4)
-size_batch = 8
+size_batch = 4
 
 lr = 1e-3
 config = {"gat_arch": [16, 8, 4], "voting_nodes": 4, "ref_map_file": "grid/grid_7_nodes.json",
           "reward_weights": [0.1, 0.9]}
 
 
-def l2_loss_graph(pred: tuple[jax.Array, distrax.Categorical], target: tuple[jax.Array, jax.Array]) -> jax.Array:
+def l2_loss_graph(pred: tuple[jax.Array, distrax.Categorical], target: tuple[jax.Array, jax.Array]) -> (jax.Array, jax.Array,jax.Array):
     loss_values, loss_probs = optax.l2_loss(pred[0], target[0]), optax.l2_loss(pred[1].probs, target[1])
-    return loss_values + loss_probs.sum()
+    loss_values = jnp.array(0.0)
+    return loss_values + loss_probs.sum()*100, loss_values, loss_probs.sum()
 
 
 def peerwise_1(params: EnvParams, init_state: EnvState) -> tuple[EnvState, tuple[jax.Array, jax.Array]]:
@@ -119,30 +120,36 @@ if __name__ == '__main__':
             prediction = model.apply(params, obs)
             return l2_loss_graph(prediction, (val, prob))
 
-        batched_loss = jax.vmap(loss_fn)(obs_batch, vals_batch, probs_batch)
-        return batched_loss.mean()
+        batched_loss, val_loss, probs_loss = jax.vmap(loss_fn)(obs_batch, vals_batch, probs_batch)
+        return batched_loss.mean(), (val_loss.mean(), probs_loss.mean())
 
 
-    grad_loss_fn = jax.value_and_grad(loss_batch)
+    grad_loss_fn = jax.value_and_grad(loss_batch,  has_aux=True)
 
 
     def train_step(state: TrainState):
 
-        loss, grads = grad_loss_fn(state.params, obs_batch, vals_batch, probs_batch)
+        loss_s, grads = grad_loss_fn(state.params, obs_batch, vals_batch, probs_batch)
         state = state.apply_gradients(grads=grads)
-        return state, loss
+        return state, loss_s
 
 
     for epoch in range(num_epochs):
         total_loss = 0.0
+        var_losses = 0.0
+        prob_losses = 0.0
 
         # loop on the artificial supervised pairs
         for (obs_i, target_i) in list_peerwise:
-            state, loss = train_step(state)
+            state, loss_s = train_step(state)
+            loss, (var_loss, prob_loss) = loss_s
             total_loss += loss
+            var_losses += var_loss
+            prob_losses += prob_loss
 
         if epoch % 200 == 0:
             print("Epoch:", epoch, "Loss:", float(total_loss))
+            print("   Value Loss:", float(var_losses), "Prob Loss:", float(prob_losses))
 
     # ---- Verification of overfitting ----
     print("\nFinal evaluation on training examples:")
