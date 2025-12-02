@@ -34,7 +34,7 @@ def gini_reward(state: EnvState, params: EnvParams) -> tuple[jax.Array, jax.Arra
     :param state: The current state of the environment.
     :param params: The environment parameters.
     """
-    sum_chosen_node = jnp.sum(state.chosen_nodes)
+    sum_chosen_node = state.ring_history.sum(axis=1).mean()
     nb_nodes = state.chosen_nodes.shape[0]
 
     stake_distribution = get_stake_distribution(state)
