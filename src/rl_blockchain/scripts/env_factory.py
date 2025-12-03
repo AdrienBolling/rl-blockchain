@@ -161,11 +161,12 @@ class BlockchainEnvCloseMapBuilder(BlockchainEnvBuilder):
         nb_nodes = positions.shape[0]
 
         def create_params_fn(key: jax.Array) -> BlockEnv.EnvParams:
-            new_adj_mat = make_rd_closed_adj_matrix(positions, key, 0.05)
-            return BlockEnv.EnvParams.create(new_adj_mat, config["voting_nodes"], config["reward_weights"])
+            key_mat, key_create = jax.random.split(key)
+            new_adj_mat = make_rd_closed_adj_matrix(positions, key_mat, 0.05)
+            return BlockEnv.EnvParams.create(new_adj_mat, config["voting_nodes"], key_create, config["reward_weights"])
 
         int_adj_mat = make_adj_matrix_from_positions(positions)
-        env_params = BlockEnv.EnvParams.create(int_adj_mat, config["voting_nodes"], config["reward_weights"])
+        env_params = BlockEnv.EnvParams.create(int_adj_mat, config["voting_nodes"], key_param, config["reward_weights"])
         static_params = StaticEnvParams.create(nb_nodes, REF_FILENAME[nb_nodes])
         env = BlockchainEnv(env_params, static_params)
         model = PPOSeparate(env.num_actions, backbone_gat_dim, actor_gcn_dim, critic_gnn_dim)

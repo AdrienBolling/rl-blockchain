@@ -112,7 +112,7 @@ class EnvParams(environment.EnvParams):
     max_steps_in_episode = 1000
 
     @classmethod
-    def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int,
+    def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int, key: jax.Array,
                rewards_weights: list | jax.Array = None, max_outer_step: int = 1000,
                max_steps: int | None = None) -> 'EnvParams':
         # nb_nodes = network_graph.shape[0]
@@ -123,6 +123,11 @@ class EnvParams(environment.EnvParams):
         rewards_weights_jnp = jnp.array(rewards_weights, dtype=jnp.float32)
 
         norm_adj_matrix = normalize_max(adj_network_graph)
+
+        if (nb_validators is None) or (nb_validators == 0):
+            # val_sample = jax.random.normal(key_nb_val) * (0.25 * nb_nodes) + (nb_nodes // 2)
+            # nb_validators = jnp.clip(jnp.round(val_sample), 4, nb_nodes).astype(int)
+            nb_validators = jax.random.randint(key, (), minval=4, maxval=adj_network_graph.shape[0])
 
         return cls(
             network_graph=create_jraph_from_adj_matrix(norm_adj_matrix),
@@ -147,14 +152,11 @@ class EnvParams(environment.EnvParams):
             max_outer_step (int, optional): Maximum number of outer steps in an episode. Default is 1000.
             max_steps (int, optional): Maximum number of steps in an episode. If None, it is set to `max_outer_step * (nb_validators + 1)`.
         """
-        key_mat, key_nb_val, key_rew_weights = jax.random.split(key, 3)
+        key_mat, key_rew_weights, key_next = jax.random.split(key, 3)
         adj_mat = create_rd_adj_matrix(nb_nodes, key_mat)
-        if nb_validators is None:
-            val_sample = jax.random.normal(key_nb_val) * (0.25 * nb_nodes) + (nb_nodes // 2)
-            nb_validators = jnp.clip(jnp.round(val_sample), 4, nb_nodes).astype(int)
         if rewards_weights is None:
             rewards_weights = jax.random.uniform(key_rew_weights, shape=(2,), minval=0.0, maxval=1.0)
-        return cls.create(adj_mat, nb_validators, rewards_weights, max_outer_step, max_steps)
+        return cls.create(adj_mat, nb_validators, key_next, rewards_weights, max_outer_step, max_steps)
 
 
 @jax.jit
