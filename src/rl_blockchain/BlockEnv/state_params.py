@@ -106,20 +106,19 @@ class StaticEnvParams:
 class EnvParams(environment.EnvParams):
     network_graph: jraph.GraphsTuple = None  # Parameters
     adj_matrix: jnp.ndarray = None  # same graph, but in a different struct
-    nb_validators: int = 0
+    nb_validators: jax.Array = None
     rewards_weights: jax.Array = None  # Weights for the rewards
     max_outer_steps_in_episode: int = 1000  # TODO Set it to -1
-    max_steps_in_episode = 1000
+    max_steps_in_episode: jax.Array = 1000
 
     @classmethod
-    def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int, key: jax.Array,
+    def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int | jax.Array, key: jax.Array,
                rewards_weights: list | jax.Array = None, max_outer_step: int = 1000,
                max_steps: int | None = None) -> 'EnvParams':
-        # nb_nodes = network_graph.shape[0]
-        # min_max_array = load_min_max_array(filename)
-        # avg_distance = min_max_array[nb_nodes][0]
+        nb_nodes = adj_network_graph.shape[0]
         if rewards_weights is None:
             rewards_weights = [1, 1]
+
         rewards_weights_jnp = jnp.array(rewards_weights, dtype=jnp.float32)
 
         norm_adj_matrix = normalize_max(adj_network_graph)
@@ -127,19 +126,24 @@ class EnvParams(environment.EnvParams):
         if (nb_validators is None) or (nb_validators == 0):
             # val_sample = jax.random.normal(key_nb_val) * (0.25 * nb_nodes) + (nb_nodes // 2)
             # nb_validators = jnp.clip(jnp.round(val_sample), 4, nb_nodes).astype(int)
-            nb_validators = jax.random.randint(key, (), minval=4, maxval=adj_network_graph.shape[0])
+            nb_validators = jax.random.randint(key, (), minval=4, maxval=nb_nodes)
+            max_steps_in_episode = max_outer_step * (
+                        jnp.asarray(nb_nodes//2, dtype=jnp.int32) + 1) if max_steps is None else jnp.asarray(max_steps, dtype=jnp.int32)
+        else:
+            nb_validators = jnp.asarray(nb_validators, dtype=jnp.int32)
+            max_steps_in_episode = max_outer_step * (nb_validators + 1) if max_steps is None else jnp.asarray(max_steps, dtype=jnp.int32)
 
         return cls(
             network_graph=create_jraph_from_adj_matrix(norm_adj_matrix),
             adj_matrix=norm_adj_matrix,
             nb_validators=nb_validators,
             rewards_weights=rewards_weights_jnp / rewards_weights_jnp.sum(),
-            max_steps_in_episode=max_outer_step * (nb_validators + 1) if max_steps is None else max_steps,
+            max_steps_in_episode=max_steps_in_episode,
             max_outer_steps_in_episode=max_outer_step
         )
 
     @classmethod
-    def create_random(cls, nb_nodes: int, key: jax.Array, nb_validators: int = None,
+    def create_random(cls, nb_nodes: int, key: jax.Array, nb_validators: int | jax.Array = None,
                       rewards_weights: list | jax.Array = None, max_outer_step: int = 1000,
                       max_steps: int | None = None) -> 'EnvParams':
         """

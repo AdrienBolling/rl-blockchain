@@ -24,9 +24,11 @@ EnvInitOutput = Tuple[nn.Module, Environment, TEnvParams, Callable[[jax.Array], 
 def white_param_fn(prev_param: TEnvParams, key: jax.Array, action: jax.Array) -> TEnvParams:
     return prev_param
 
+
 @jax.jit
 def change_val_param_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array) -> EnvParams:
     return jax.lax.cond(action == 0, _sub_change_val_fn, _sub_white_param_fn, prev_param, key)
+
 
 def _sub_white_param_fn(prev_param: TEnvParams, key: jax.Array) -> TEnvParams:
     return prev_param
@@ -133,12 +135,12 @@ class BlockchainEnvBuilder(EnvBuilder):
         backbone_gat_dim, actor_gcn_dim, critic_gnn_dim = config["gat_arch"]
 
         def create_params_fn(key: jax.Array) -> BlockEnv.EnvParams:
-            return BlockEnv.EnvParams.create_random(
+            return jax.lax.stop_gradient(BlockEnv.EnvParams.create_random(
                 config["n_nodes"],
                 key,
                 config["voting_nodes"],
                 config["reward_weights"]
-            )
+            ))
 
         env_params = create_params_fn(key_param)
         static_params = StaticEnvParams.create(config["n_nodes"], REF_FILENAME[config["n_nodes"]])
@@ -163,7 +165,8 @@ class BlockchainEnvCloseMapBuilder(BlockchainEnvBuilder):
         def create_params_fn(key: jax.Array) -> BlockEnv.EnvParams:
             key_mat, key_create = jax.random.split(key)
             new_adj_mat = make_rd_closed_adj_matrix(positions, key_mat, 0.05)
-            return BlockEnv.EnvParams.create(new_adj_mat, config["voting_nodes"], key_create, config["reward_weights"])
+            return jax.lax.stop_gradient(
+                BlockEnv.EnvParams.create(new_adj_mat, config["voting_nodes"], key_create, config["reward_weights"]))
 
         int_adj_mat = make_adj_matrix_from_positions(positions)
         env_params = BlockEnv.EnvParams.create(int_adj_mat, config["voting_nodes"], key_param, config["reward_weights"])
@@ -188,7 +191,7 @@ class CartPoleEnvBuilder(EnvBuilder):
         self.validate_config(config)
         env, env_params = gymnax.make("CartPole-v1")
         model = CategoricalSeparateMLP(env.num_actions, 64, 2)
-        create_params_fn = lambda key: env_params
+        create_params_fn = jax.lax.stop_gradient(lambda key: env_params)
 
         return model, env, env_params, create_params_fn, self.__class__.log
 

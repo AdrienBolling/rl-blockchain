@@ -541,10 +541,11 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
              num_episodes: int = 10,
              recorded_episodes: int = 10, batch_size: int = 10,
              log_fn: LOG_TYPE = None) -> dict[str, jax.Array]:
+    steps_in_episode = int(env.default_params.max_steps_in_episode)
     @jax.jit
     def single_rollout(rng: jax.Array, new_param: EnvParams):
         return rollout_eval(rng, env, model, ppo_state, new_param, update_params_fn,
-                            env.default_params.max_steps_in_episode)
+                            steps_in_episode)
 
     vm_rollouts = jax.vmap(single_rollout)
     params_map = jax.vmap(create_params_fn)
