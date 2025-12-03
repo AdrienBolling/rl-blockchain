@@ -242,7 +242,7 @@ class PPOSeparate(nn.Module):
 
     @nn.compact
     def __call__(self, graph):
-        mask = compute_legal_actions_obs(graph)
+        mask = jax.lax.stop_gradient(compute_legal_actions_obs(graph))
 
         shared = PPOBackbone(self.backbone_gat_dim)(graph)
         pi = PPOActorHead(self.action_dim, self.actor_gcn_dim)(shared, mask)
