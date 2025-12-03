@@ -87,6 +87,12 @@ def _parse_args() -> Namespace:
         default=False,
         help="If True, logs to console as well. Default is False.",
     )
+    parser.add_argument(
+        "--logging-prefix",
+        type=str,
+        default="run",
+        help="Prefix for logging. Default is 'run'.",
+    )
 
     # Wandb args
     parser.add_argument(

@@ -58,7 +58,7 @@ def setup_wandb(args: Namespace) -> wandb.sdk.wandb_run.Run:
     except wandb.errors.CommError:
         run_number = 0
 
-    run_id = f"run_{run_number}"
+    run_id = f"{args.logging_prefix}_{run_number}"
     run = wandb.init(
         project=project,
         entity=entity,

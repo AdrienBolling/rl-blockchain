@@ -192,7 +192,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         )
         reward_multiplied = reward * (params.nb_validators + 1)  # Scale reward by number of validators
 
-        infos_2 = dict(**info, action_taken=selected_node)
+        infos_2 = dict(**info, action_taken=selected_node, nb_validators=params.nb_validators)
 
         return (
             jax.lax.stop_gradient(new_obs),
