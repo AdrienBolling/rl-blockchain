@@ -1,17 +1,20 @@
 import logging
 import pathlib
 from argparse import Namespace
-from typing import Callable
+from typing import Callable, Tuple
 
+import flax
 import jax
 import optax
 import orbax.checkpoint as ocp
 import wandb
+from gymnax.environments.environment import TEnvParams, Environment
 from tqdm import tqdm
 
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch, load_ppo_state
 from rl_blockchain.algo.ppo import eval_ppo
-from rl_blockchain.scripts.env_factory import GenericEnvFactory
+from rl_blockchain.scripts.env_factory import GenericEnvFactory, change_val_param_fn, white_param_fn, Outer_param_fn, \
+    LOG_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +57,7 @@ def train_ppo(ARGS: Namespace):
 
     sub_epoch = 0
 
-    model, env, create_params_fn, log_fn = get_env_config(ARGS, key_param)
+    model, env, create_params_fn, log_fn, update_params_fn = get_env_config(ARGS, key_param)
 
     # If we need to resume a training, get the name of the checkpoint
     load_chkpt_name: pathlib.Path = ARGS.checkpoint
@@ -88,14 +91,16 @@ def train_ppo(ARGS: Namespace):
         model_opt = optax.adam(lr_fn(epoch))
         # Train for one epoch
         logger.info(f"Epoch {epoch + 1}/{num_epochs}")
-        ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env, model_opt=model_opt, model=model,
-                                           create_params_fn=create_params_fn,
-                                           num_steps=num_steps,
-                                           num_envs=num_envs, batch_size=batch_size, gamma=gamma,
-                                           lambda_=lambda_, clip_ratio=clip_ratio_fn(epoch),
-                                           value_coef=value_coef, entropy_coef=entropy_coef_fn(epoch),
-                                           sub_epoch=sub_epoch, log_fn=log_fn,
-                                           normalize_rewards=True, norm_advantage=norm_advantages)
+        ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env,
+                                           model=model, num_steps=num_steps,
+                                           num_envs=num_envs, create_params_fn=create_params_fn,
+                                           update_params_fn=update_params_fn,
+                                           batch_size=batch_size, model_opt=model_opt, gamma=gamma,
+                                           lambda_=lambda_,
+                                           clip_ratio=clip_ratio_fn(epoch), normalize_rewards=True, log_fn=log_fn,
+                                           sub_epoch=sub_epoch, value_coef=value_coef,
+                                           entropy_coef=entropy_coef_fn(epoch),
+                                           norm_advantage=norm_advantages)
         key, _ = jax.random.split(key)
         if epoch % ARGS.eval_interval == 0:
             logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")
@@ -106,6 +111,7 @@ def train_ppo(ARGS: Namespace):
                 env=env,
                 model=model,
                 create_params_fn=create_params_fn,
+                update_params_fn=update_params_fn,
                 num_episodes=ARGS.eval_episodes,
                 recorded_episodes=5,
                 log_fn=log_fn
@@ -120,7 +126,8 @@ def train_ppo(ARGS: Namespace):
     wandb.finish()
 
 
-def get_env_config(ARGS: Namespace, key_param: jax.Array):
+def get_env_config(ARGS: Namespace, key_param: jax.Array) \
+        -> Tuple[flax.linen.Module, Environment, Callable[[jax.Array], TEnvParams], LOG_TYPE, Outer_param_fn]:
     env_name = ARGS.env.lower()
     if env_name == "blockenv":
         config = {"n_nodes": ARGS.n_nodes, "gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
@@ -135,14 +142,15 @@ def get_env_config(ARGS: Namespace, key_param: jax.Array):
         raise ValueError(
             f"Unknown environment: {env_name}. Available environments: {GenericEnvFactory.available_environments()}")
     model, env, _, create_params_fn, log_fn = GenericEnvFactory.create(env_name, key_param, config)
-    return model, env, create_params_fn, log_fn
+    update_params_fn = change_val_param_fn if ARGS.update_params else white_param_fn
+    return model, env, create_params_fn, log_fn, update_params_fn
 
 
 def eval_ppo_run(args: Namespace):
     key = jax.random.PRNGKey(args.seed)
     key_eval, state_key, key_param = jax.random.split(key, 3)
 
-    model, env, create_params_fn, log_fn = get_env_config(args, key_param)
+    model, env, create_params_fn, log_fn, update_params_fn = get_env_config(args, key_param)
 
     chkpt_dir: pathlib.Path = args.chkpt_dir
     ppo_state = load_ppo_state(chkpt_dir, state_key)
@@ -154,6 +162,7 @@ def eval_ppo_run(args: Namespace):
         key=key_eval,
         model=model,
         create_params_fn=create_params_fn,
+        update_params_fn=update_params_fn,
         num_episodes=args.eval_episodes,
         recorded_episodes=5,
         log_fn=log_fn

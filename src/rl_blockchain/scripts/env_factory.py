@@ -8,7 +8,7 @@ import jax.numpy as jnp
 from gymnax.environments.environment import Environment, TEnvParams
 
 from rl_blockchain import BlockEnv
-from rl_blockchain.BlockEnv import StaticEnvParams, BlockchainEnv
+from rl_blockchain.BlockEnv import StaticEnvParams, BlockchainEnv, EnvParams
 from rl_blockchain.BlockEnv.BlockchainGraph import make_rd_closed_adj_matrix, import_positions_from_file, \
     make_adj_matrix_from_positions
 from rl_blockchain.model import CategoricalSeparateMLP, PPOSeparate
@@ -16,7 +16,43 @@ from rl_blockchain.scripts.parser import REF_FILENAME
 
 # Type alias
 LOG_TYPE = Callable[[dict[str, jax.Array], jax.Array, jax.Array], dict[str, jax.Array]]
+Outer_param_fn = Callable[[TEnvParams, jax.Array, jax.Array], TEnvParams]
 EnvInitOutput = Tuple[nn.Module, Environment, TEnvParams, Callable[[jax.Array], TEnvParams], LOG_TYPE]
+
+
+@jax.jit
+def white_param_fn(prev_param: TEnvParams, key: jax.Array, action: jax.Array) -> TEnvParams:
+    return prev_param
+
+@jax.jit
+def change_val_param_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array) -> EnvParams:
+    return jax.lax.cond(action == -1, _sub_change_val_fn, _sub_white_param_fn, prev_param, key)
+
+def _sub_white_param_fn(prev_param: TEnvParams, key: jax.Array) -> TEnvParams:
+    return prev_param
+
+
+def _sub_change_val_fn(prev_param: EnvParams, key: jax.Array) -> EnvParams:
+    key_thresh, key_gen = jax.random.split(key)
+
+    # threshold
+    cond = jax.random.uniform(key_thresh) > 0.8
+
+    # random integer in [4, n_nodes)
+    max_n = prev_param.network_graph.n_node[0]
+    sampled = jax.random.randint(key_gen, (), minval=4, maxval=max_n)
+
+    # cond-select instead of Python
+    new_val = jnp.where(cond, sampled, prev_param.nb_validators)
+
+    return EnvParams(
+        network_graph=prev_param.network_graph,
+        adj_matrix=prev_param.adj_matrix,
+        nb_validators=new_val,
+        rewards_weights=prev_param.rewards_weights,
+        max_steps_in_episode=prev_param.max_steps_in_episode,
+        max_outer_steps_in_episode=prev_param.max_outer_steps_in_episode,
+    )
 
 
 class EnvBuilder(abc.ABC):
@@ -121,7 +157,7 @@ class BlockchainEnvCloseMapBuilder(BlockchainEnvBuilder):
         env = BlockchainEnv(env_params, static_params)
         model = PPOSeparate(env.num_actions, backbone_gat_dim, actor_gcn_dim, critic_gnn_dim)
 
-        return model, env, env_params, create_params_fn, self.__class__.log
+        return model, env, env_params, create_params_fn, self.__class__.log, white_param_fn
 
 
 class CartPoleEnvBuilder(EnvBuilder):

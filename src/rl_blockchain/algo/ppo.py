@@ -19,7 +19,7 @@ from optax._src.base import GradientTransformationExtraArgs
 from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.BlockEnv.BlockEnv import BlockchainEnv
 from rl_blockchain.BlockEnv.NormailzationWrapper import NormalizationWrapper
-from rl_blockchain.scripts.env_factory import LOG_TYPE
+from rl_blockchain.scripts.env_factory import LOG_TYPE, Outer_param_fn
 
 logger = logging.getLogger(__name__)
 
@@ -31,35 +31,37 @@ class PPOState:
     rng_key: jnp.ndarray
 
 
-@partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode'))
+@partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode', 'update_param_fn'))
 def rollout(key_input, env: environment.Environment,
             model: nn.Module, ppo_state: PPOState,
-            env_params: EnvParams, steps_in_episode: int):
+            first_env_params: EnvParams, steps_in_episode: int,
+            update_param_fn: Outer_param_fn):
     """Rollout a jitted gymnax episode with lax.scan."""
     # Reset the environment
     key_reset, key_episode = jax.random.split(key_input)
-    first_obs, first_state = env.reset(key_reset, env_params)
+    first_obs, first_state = env.reset(key_reset, first_env_params)
 
     def policy_step(state_input, tmp):
         """lax.scan compatible step transition in jax env."""
-        obs, state, key = state_input
-        next_key, key_step, key_net = jax.random.split(key, 3)
+        obs, state, params, key = state_input
+        next_key, key_step, key_net, key_params = jax.random.split(key, 4)
         value, action_distribution = model.apply(ppo_state.params, obs, )
         action = action_distribution.sample(seed=key_net)
         logp = action_distribution.log_prob(action)
 
         next_obs, next_state, reward, done, infos = env.step(
-            key_step, state, action, env_params
+            key_step, state, action, params
         )
+        next_params = update_param_fn(params, key_params, action)
 
-        carry = [next_obs, next_state, next_key]
+        carry = [next_obs, next_state, next_params, next_key]
         traj = (obs, action, logp, reward, done, value, infos)
         return carry, traj
 
     # Scan over episode step loop
-    (obs_end, _, _), trajs = jax.lax.scan(
+    (obs_end, _, _, _), trajs = jax.lax.scan(
         policy_step,
-        [first_obs, first_state, key_episode],
+        [first_obs, first_state, first_env_params, key_episode],
         None,
         steps_in_episode
     )
@@ -70,34 +72,37 @@ def rollout(key_input, env: environment.Environment,
     return observations, actions, logps, rewards, dones, values, last_value, infos
 
 
-@partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode'))
+@partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode', 'update_param_fn'))
 def rollout_eval(key_input, env: environment.Environment,
                  model: nn.Module, ppo_state: PPOState,
-                 env_params: EnvParams, steps_in_episode: int):
+                 first_env_params: EnvParams,
+                 update_param_fn: Outer_param_fn,
+                 steps_in_episode: int):
     """Rollout a jitted gymnax episode with lax.scan."""
     # Reset the environment
     key_reset, key_episode = jax.random.split(key_input)
-    first_obs, first_state = env.reset(key_reset, env_params)
+    first_obs, first_state = env.reset(key_reset, first_env_params)
 
     def policy_step(state_input, tmp):
         """lax.scan compatible step transition in jax env."""
-        obs, state, key = state_input
-        next_key, key_step, key_net = jax.random.split(key, 3)
+        obs, state, params, key = state_input
+        next_key, key_step, key_net, key_params = jax.random.split(key, 4)
         _, action_distribution = model.apply(ppo_state.params, obs)
         action = action_distribution.mode()
 
         next_obs, next_state, reward, done, infos = env.step(
-            key_step, state, action, env_params
+            key_step, state, action, first_env_params
         )
+        next_params = update_param_fn(params, key_params, action)
 
-        carry = [next_obs, next_state, next_key]
+        carry = [next_obs, next_state, next_params, next_key]
         traj = (obs, action, reward, done, infos)
         return carry, traj
 
     # Scan over episode step loop
-    (obs_end, _, _), trajs = jax.lax.scan(
+    (obs_end, _, _, _), trajs = jax.lax.scan(
         policy_step,
-        [first_obs, first_state, key_episode],
+        [first_obs, first_state, first_env_params, key_episode],
         None,
         steps_in_episode
     )
@@ -250,6 +255,7 @@ def train_ppo(
         env: BlockchainEnv,
         model: nn.module,
         create_params_fn: Callable[[jax.Array], TEnvParams],
+        update_params_fn: Outer_param_fn,
         num_steps,
         num_envs,
         num_epochs,
@@ -284,6 +290,7 @@ def train_ppo(
             ppo_state,
             new_param,
             num_steps,
+            update_params_fn
         )
 
     vm_rollout = jax.vmap(single_rollout)
@@ -390,8 +397,7 @@ def eval_ppo_and_log(env: BlockchainEnv, model: nn.module, ppo_state: PPOState, 
 
 
 def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, model: nn.Module, num_steps: int,
-                num_envs: int,
-                create_params_fn: Callable[[jax.Array], TEnvParams],
+                num_envs: int, create_params_fn: Callable[[jax.Array], TEnvParams], update_params_fn: Outer_param_fn,
                 batch_size: int,
                 model_opt: GradientTransformationExtraArgs, gamma: float, lambda_: float,
                 clip_ratio: float, normalize_rewards: bool = False, log_fn: LOG_TYPE = None,
@@ -417,6 +423,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
             ppo_state,
             new_param,
             num_steps,
+            update_params_fn
         )
 
     vm_rollout = jax.vmap(single_rollout)
@@ -530,12 +537,14 @@ def create_checkpoint_manager(
 
 
 def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module, key: jax.Array,
-             create_params_fn: Callable[[jax.Array], TEnvParams], num_episodes: int = 10,
+             create_params_fn: Callable[[jax.Array], TEnvParams], update_params_fn: Outer_param_fn,
+             num_episodes: int = 10,
              recorded_episodes: int = 10, batch_size: int = 10,
              log_fn: LOG_TYPE = None) -> dict[str, jax.Array]:
     @jax.jit
     def single_rollout(rng: jax.Array, new_param: EnvParams):
-        return rollout_eval(rng, env, model, ppo_state, new_param, env.default_params.max_steps_in_episode)
+        return rollout_eval(rng, env, model, ppo_state, new_param, update_params_fn,
+                            env.default_params.max_steps_in_episode)
 
     vm_rollouts = jax.vmap(single_rollout)
     params_map = jax.vmap(create_params_fn)

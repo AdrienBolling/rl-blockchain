@@ -5,6 +5,7 @@ import jax.numpy as jnp
 from rl_blockchain.BlockEnv import create_rd_adj_matrix, EnvParams, BlockchainEnv, StaticEnvParams
 from rl_blockchain.algo.ppo import train_ppo, eval_ppo_and_log
 from rl_blockchain.model import CategoricalSeparateMLP
+from rl_blockchain.scripts.env_factory import white_param_fn
 
 
 def main():
@@ -40,14 +41,8 @@ def main():
     print("num_actions:", env.num_actions)
     mlpCat = CategoricalSeparateMLP(env.num_actions, 64, 2)
     create_params_fn = lambda key_map : env_params
-    ppo_state = train_ppo(
-        env,
-        mlpCat,
-        create_params_fn,
-        num_steps, num_envs, num_epochs,
-        batch_size, lr,
-        gamma, lambda_, clip_ratio, subkey
-    )
+    ppo_state = train_ppo(env, mlpCat, create_params_fn, white_param_fn, num_steps, num_envs, num_epochs, batch_size, lr, gamma,
+                          lambda_, clip_ratio, subkey)
     key, subkey = jax.random.split(subkey)
     # ===== Evaluation =====
     print("[EVAL] Running evaluation with default (random) policy...")

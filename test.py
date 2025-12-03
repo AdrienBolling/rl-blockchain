@@ -1,23 +1,20 @@
 import jax
-import jax.numpy as jnp
 
-from rl_blockchain.BlockEnv import create_rd_adj_matrix, EnvParams, BlockchainEnv, StaticEnvParams
 from rl_blockchain.algo.ppo import train_ppo, eval_ppo_and_log
-
-
+from rl_blockchain.scripts.env_factory import white_param_fn, GenericEnvFactory
 
 
 def main():
     # Hyperparameters
-    num_steps = 10000                # steps per rollout
-    num_envs  = 4                  # parallel environments
-    num_epochs = 5                 # training epochs
+    num_steps = 10000  # steps per rollout
+    num_envs = 4  # parallel environments
+    num_epochs = 5  # training epochs
     batch_size = 32
-    lr         = 3e-4
-    gamma      = 0.99
-    lambda_    = 0.95
+    lr = 3e-4
+    gamma = 0.99
+    lambda_ = 0.95
     clip_ratio = 0.2
-    
+
     # ----- Random Key -----
     # Set the random key for reproducibility
     key = jax.random.PRNGKey(0)
@@ -26,13 +23,11 @@ def main():
 
     # Create environment params
 
+    config = {"n_nodes": 25, "gat_arch": [4, 4, 4], "voting_nodes": 3,
+              "reward_weights": [0.5, 0.5]}
+    model, env, env_params, create_params_fn, log_fn = GenericEnvFactory.create("blockenv", key, config)
+    update_params_fn = white_param_fn
 
-    env_params = EnvParams.create_random(25, subkey, nb_validators=7, rewards_weights=[1, 1])
-    static_params = StaticEnvParams.create(25, "ref_grid_min_max/grid_25.csv")
-    env = BlockchainEnv(env_params, static_params)
-    create_params_fn = lambda key_map: EnvParams.create_random(env.nb_nodes, key_map, env_params.nb_validators,
-                                                env_params.rewards_weights)
-    
     key, subkey = jax.random.split(subkey)
 
     # ===== Training =====
@@ -40,12 +35,10 @@ def main():
     # Note: train_ppo currently prints metrics but does not return the final state.
     # If you update train_ppo to return PPOState, you can capture it like:
     # final_state = train_ppo(...)
-    ppo_state = train_ppo(
-        env,
-        num_steps, num_envs, num_epochs,
-        batch_size, lr,
-        gamma, lambda_, clip_ratio, subkey
-    )
+    ppo_state = train_ppo(env, model, create_params_fn, update_params_fn, num_steps, num_envs, num_epochs, batch_size,
+                          lr, gamma, lambda_,
+                          clip_ratio,
+                          subkey, )
     key, subkey = jax.random.split(subkey)
     # ===== Evaluation =====
     print("[EVAL] Running evaluation with default (random) policy...")

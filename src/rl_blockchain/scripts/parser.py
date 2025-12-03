@@ -143,6 +143,13 @@ def _parse_args() -> Namespace:
         help="Path to the reference map file for the environment. Default is None.",
     )
 
+    ppo_parser.add_argument(
+        "--update-params",
+        action="store_true",
+        default=False,
+        help="If True, update the environment parameters during training/testing. Default is False.",
+    )
+
     mode_subparsers = ppo_parser.add_subparsers(dest="mode", required=True)
     # Add a subparser for the 'train' mode
     train_parser = mode_subparsers.add_parser("train", help="Train the PPO agent.")
