@@ -6,7 +6,7 @@ from rl_blockchain.utils.logging import setup_logging, setup_wandb
 
 logger = logging.getLogger(__name__)
 
-from jax import config
+# from jax import config
 # config.update("jax_log_compiles", True)
 
 

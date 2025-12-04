@@ -280,6 +280,8 @@ def train_ppo(
     model_opt_state = model_opt.init(model_vars)
     ppo_state = PPOState(model_vars, model_opt_state, ppo_key)
 
+    num_steps = ((num_steps + batch_size - 1) // batch_size) * batch_size
+
     # rollout fns expect graph inputs inside rollout
     @jax.jit
     def single_rollout(rng: jax.Array, new_param: EnvParams):
@@ -543,11 +545,11 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
              log_fn: LOG_TYPE = None) -> dict[str, jax.Array]:
     steps_in_episode = int(env.default_params.max_steps_in_episode)
     @jax.jit
-    def single_rollout(rng: jax.Array, new_param: EnvParams):
+    def single_rollout_eval(rng: jax.Array, new_param: EnvParams):
         return rollout_eval(rng, env, model, ppo_state, new_param, update_params_fn,
                             steps_in_episode)
 
-    vm_rollouts = jax.vmap(single_rollout)
+    vm_rollouts = jax.vmap(single_rollout_eval)
     params_map = jax.vmap(create_params_fn)
 
     all_rewards = []
