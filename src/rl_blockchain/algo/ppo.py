@@ -48,7 +48,7 @@ def rollout(key_input, env: environment.Environment,
         value, action_distribution = model.apply(ppo_state.params, obs, )
         action = action_distribution.sample(seed=key_net)
         logp = action_distribution.log_prob(action)
-        is_inner = action > -1
+        is_inner = action > 0
 
         next_obs, next_state, reward, done, infos = env.step(
             key_step, state, action, params
