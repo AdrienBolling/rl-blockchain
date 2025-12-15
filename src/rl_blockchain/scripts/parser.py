@@ -194,7 +194,7 @@ def _parse_args() -> Namespace:
     train_parser.add_argument(
         "--gamma",
         type=float,
-        default=0.99,
+        default=0.98,
         help="Discount factor for future rewards. Default is 0.99.",
     )
     train_parser.add_argument(

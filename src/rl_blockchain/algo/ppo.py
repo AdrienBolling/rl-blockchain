@@ -48,6 +48,7 @@ def rollout(key_input, env: environment.Environment,
         value, action_distribution = model.apply(ppo_state.params, obs, )
         action = action_distribution.sample(seed=key_net)
         logp = action_distribution.log_prob(action)
+        is_inner = action > -1
 
         next_obs, next_state, reward, done, infos = env.step(
             key_step, state, action, params
@@ -55,7 +56,7 @@ def rollout(key_input, env: environment.Environment,
         next_params = update_param_fn(params, key_params, action)
 
         carry = [next_obs, next_state, next_params, next_key]
-        traj = (obs, action, logp, reward, done, value, infos)
+        traj = (obs, action, logp, reward, is_inner, done, value, infos)
         return carry, traj
 
     # Scan over episode step loop
@@ -68,8 +69,8 @@ def rollout(key_input, env: environment.Environment,
 
     last_value, _ = model.apply(ppo_state.params, obs_end)
     # Return masked sum of rewards accumulated by agent in episode
-    observations, actions, logps, rewards, dones, values, infos = trajs
-    return observations, actions, logps, rewards, dones, values, last_value, infos
+    observations, actions, logps, rewards, inners, dones, values, infos = trajs
+    return observations, actions, logps, rewards, inners, dones, values, last_value, infos
 
 
 @partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode', 'update_param_fn'))
@@ -113,7 +114,7 @@ def rollout_eval(key_input, env: environment.Environment,
 
 
 @jax.jit
-def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
+def compute_gae(rewards, values, inners, dones, last_value, gamma=0.99, lambda_=0.95):
     values = jnp.concatenate([values, last_value[None]], axis=0)
 
     def fn(carry, idx):
@@ -121,8 +122,10 @@ def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
         r = rewards[idx]
         v = values[idx]
         d = dones[idx]
-        delta = r + gamma * next_val * (1 - d) - v
-        adv = delta + gamma * lambda_ * adv * (1 - d)
+        is_inner = inners[idx]
+        used_gamma = jax.lax.select(is_inner, 1.0, gamma)
+        delta = r + used_gamma * next_val * (1 - d) - v
+        adv = delta + used_gamma * lambda_ * adv * (1 - d)
         return (adv, v), adv
 
     (_, _), advs = jax.lax.scan(
@@ -308,21 +311,22 @@ def train_ppo(
 
         params_list = params_map(subkeys_params)
 
-        observations, acts, logps, rews, dones, vals, last_values, infos = vm_rollout(subkeys, params_list)
+        observations, acts, logps, rews, inners, dones, vals, last_values, infos = vm_rollout(subkeys, params_list)
         # refined_value = compute_avg_value(infos)
 
         # Extract graphs and last graphs
         # GAE over each env
         advantages = jax.vmap(
-            lambda r, v, d, last_value: compute_gae(
+            lambda r, v, i, d, last_value: compute_gae(
                 r,
                 v,
+                i,
                 d,
                 last_value,
                 gamma,
                 lambda_,
             )
-        )(rews, vals, dones, last_values)
+        )(rews, vals, inners, dones, last_values)
         returns = advantages + vals
         advantages_norm = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
@@ -439,7 +443,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     subkeys_params = jax.random.split(params_key, num_envs)
 
     params_list = params_map(subkeys_params)
-    observations, acts, logps, rews, dones, vals, last_values, infos_env = vm_rollout(subkeys, params_list)
+    observations, acts, logps, rews, inners, dones, vals, last_values, infos_env = vm_rollout(subkeys, params_list)
     logger.info(f"Epoch {epoch}: Collected {num_steps * num_envs} steps.")
 
     if log_fn is not None:
@@ -448,15 +452,16 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
 
     # Compute advantages and returns
     advantages = jax.vmap(
-        lambda r, v, d, last_value: compute_gae(
+        lambda r, v, i, d, last_value: compute_gae(
             r,
             v,
+            i,
             d,
             last_value,
             gamma,
             lambda_,
         )
-    )(rews, vals, dones, last_values)
+    )(rews, vals, dones, inners, last_values)
     returns = advantages + vals
     if norm_advantage:
         advantages_norm = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
@@ -544,6 +549,7 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
              recorded_episodes: int = 10, batch_size: int = 10,
              log_fn: LOG_TYPE = None) -> dict[str, jax.Array]:
     steps_in_episode = int(env.default_params.max_steps_in_episode)
+
     @jax.jit
     def single_rollout_eval(rng: jax.Array, new_param: EnvParams):
         return rollout_eval(rng, env, model, ppo_state, new_param, update_params_fn,
