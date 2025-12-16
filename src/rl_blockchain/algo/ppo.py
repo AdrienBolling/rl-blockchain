@@ -123,7 +123,8 @@ def compute_gae(rewards, values, inners, dones, last_value, gamma=0.99, lambda_=
         v = values[idx]
         d = dones[idx]
         is_inner = inners[idx]
-        used_gamma = jax.lax.select(is_inner, 1.0, gamma)
+        # used_gamma = jax.lax.select(is_inner, 1.0, gamma)
+        used_gamma = gamma
         delta = r + used_gamma * next_val * (1 - d) - v
         adv = delta + used_gamma * lambda_ * adv * (1 - d)
         return (adv, v), adv
