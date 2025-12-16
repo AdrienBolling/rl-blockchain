@@ -190,14 +190,14 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
             lambda tup: weighted_rewards(tup[0], tup[1], tup[2], tup[3]),
             operand_reward
         )
-        # reward_multiplied = reward * (params.nb_validators + 1)  # Scale reward by number of validators
+        reward_multiplied = reward * (params.nb_validators + 1)  # Scale reward by number of validators
 
         infos_2 = dict(**info, action_taken=selected_node, nb_validators=params.nb_validators)
 
         return (
             jax.lax.stop_gradient(new_obs),
             jax.lax.stop_gradient(new_state),
-            jnp.array(reward),
+            jnp.array(reward_multiplied),
             done,
             infos_2,
         )
