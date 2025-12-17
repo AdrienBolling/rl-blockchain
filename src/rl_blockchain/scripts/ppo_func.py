@@ -5,12 +5,15 @@ from typing import Callable, Tuple
 
 import flax
 import jax
+import jax.numpy as jnp
 import optax
 import orbax.checkpoint as ocp
 import wandb
 from gymnax.environments.environment import TEnvParams, Environment
 from tqdm import tqdm
 
+from rl_blockchain.BlockEnv import BlockchainEnv
+from rl_blockchain.BlockEnv.NormailzationWrapper import NormalizationWrapper
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch, load_ppo_state
 from rl_blockchain.algo.ppo import eval_ppo
 from rl_blockchain.scripts.env_factory import GenericEnvFactory, change_val_param_fn, white_param_fn, Outer_param_fn, \
@@ -28,6 +31,8 @@ def make_fct_value(inputs: list[float], nb_step: int) -> Callable[[int], float]:
         return lambda x: init + (last_value - init) * (x / (nb_step - 1))
     raise ValueError("Unexpected number of inputs: {}, must be 1 or 2".format(len(inputs)))
 
+def make_fct_value_array(inputs: list[float], nb_step: int) -> Callable[[int], jax.Array]:
+    return lambda x: jnp.float32(make_fct_value(inputs, nb_step)(x))
 
 def train_ppo(ARGS: Namespace):
     """
@@ -44,13 +49,14 @@ def train_ppo(ARGS: Namespace):
     num_envs = ARGS.num_envs
     num_epochs = ARGS.num_epochs
     batch_size = ARGS.batch_size
-    lr_fn = make_fct_value(ARGS.learning_rate, num_epochs)
+    normalize_rewards = True
+    lr_fn = make_fct_value_array(ARGS.learning_rate, num_epochs)
     gamma = ARGS.gamma
     lambda_ = ARGS.lambda_
     norm_advantages = not ARGS.no_norm_advantages
     clip_ratio_fn = make_fct_value(ARGS.clip_ratio, num_epochs)
-    value_coef = ARGS.value_coef
-    entropy_coef_fn = make_fct_value(ARGS.entropy_coef, num_epochs)
+    value_coef = jnp.float32(ARGS.value_coef)
+    entropy_coef_fn = make_fct_value_array(ARGS.entropy_coef, num_epochs)
     key = jax.random.PRNGKey(ARGS.seed)
     key, key_param = jax.random.split(key)
     # Create environment parameters
@@ -86,6 +92,13 @@ def train_ppo(ARGS: Namespace):
 
     key, key_eval = jax.random.split(key)
 
+    if normalize_rewards and isinstance(env, BlockchainEnv):
+        # If using normalization, ensure the environment is wrapped accordingly
+        env = NormalizationWrapper(env)
+
+    print(f"INIT ids env : {id(env)}")
+    print(f"INIT hashs env : {hash(env)}")
+
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
         model_opt = optax.adam(lr_fn(epoch))
@@ -97,7 +110,7 @@ def train_ppo(ARGS: Namespace):
                                            update_params_fn=update_params_fn,
                                            batch_size=batch_size, model_opt=model_opt, gamma=gamma,
                                            lambda_=lambda_,
-                                           clip_ratio=clip_ratio_fn(epoch), normalize_rewards=True, log_fn=log_fn,
+                                           clip_ratio=clip_ratio_fn(epoch), log_fn=log_fn,
                                            sub_epoch=sub_epoch, value_coef=value_coef,
                                            entropy_coef=entropy_coef_fn(epoch),
                                            norm_advantage=norm_advantages)

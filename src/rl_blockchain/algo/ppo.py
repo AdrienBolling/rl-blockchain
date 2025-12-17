@@ -142,8 +142,8 @@ def update_ppo(
         model_apply,
         model_optimizer,
         clip_ratio: float = 0.2,
-        value_coef: float = 0.5,
-        entropy_coef: float = 0.01
+        value_coef: jax.Array = jnp.float32(0.5),
+        entropy_coef: jax.Array = jnp.float32(0.01)
 ) -> tuple[PPOState, float, float, float, float, float, dict[str, Any]]:
     """
     Performs a PPO update over a batch of transitions.
@@ -186,7 +186,7 @@ def update_ppo(
 
             clipp_actor = jnp.clip(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
             policy_loss = -jnp.minimum(ratio * adv, clipp_actor * adv)
-            entropy = dist.entropy() # TODO
+            entropy = dist.entropy()  # TODO
 
             value_pred_clipped = old_val + (value_pred - old_val).clip(
                 -clip_ratio, clip_ratio)
@@ -367,11 +367,6 @@ def train_ppo(
         print(
             f"Epoch {epoch}: PolicyLoss={policy_loss:.3f}, ValueLoss={value_loss:.3f}, Entropy={entropy:.3f}, approxKL={approx_kl:.3f}, clipFract={clip_frac:.3f}, info_coef={info_coef}")
         print(f"rewards : {rews.sum():.3f}, longueur {rews.shape}, dones {dones.sum():.3f}")
-        # print("Infos -> ", infos)
-        # string_builder = ""
-        # for key, value in refined_value.items():
-        #     string_builder += f"{key}: {value:.3f}, "
-        # print("Infos Value -> ", string_builder)
 
     return ppo_state
 
@@ -402,8 +397,9 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
                 num_envs: int, create_params_fn: Callable[[jax.Array], TEnvParams], update_params_fn: Outer_param_fn,
                 batch_size: int,
                 model_opt: GradientTransformationExtraArgs, gamma: float, lambda_: float,
-                clip_ratio: float, normalize_rewards: bool = False, log_fn: LOG_TYPE = None,
-                sub_epoch: int = 0, value_coef: float = 0.5, entropy_coef: float = 0.01,
+                clip_ratio: float, log_fn: LOG_TYPE = None,
+                sub_epoch: int = 0, value_coef: jax.Array = jnp.float32(0.5),
+                entropy_coef: jax.Array = jnp.float32(0.01),
                 norm_advantage: bool = False) -> Tuple[PPOState, int]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
@@ -411,9 +407,10 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     """
 
     # TODO normalization of rewards
-    if normalize_rewards and isinstance(env, BlockchainEnv):
-        # If using normalization, ensure the environment is wrapped accordingly
-        env = NormalizationWrapper(env)
+    print(f"INIT ids:"
+          f"env: {id(env)}, model: {id(model)}, update_params_fn: {id(update_params_fn)}, num_steps: {id(num_steps)}")
+    print(f"INIT hashs:"
+          f"env: {hash(env)}, model: {hash(model)}, update_params_fn: {hash(update_params_fn)}, num_steps: {hash(num_steps)}")
 
     # Vectorized rollout
     @jax.jit
@@ -481,6 +478,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
         logger.info(f"Epoch {epoch}: Processing batch {start // batch_size + 1} / {perm.shape[0] // batch_size + 1}")
         idx = perm[start: start + batch_size]
         batch_graphs = jax.tree.map(lambda x: x[idx], flat_graphs)
+        # print(f"ID elements : model.apply:{id(model.apply)}, model_opt:{id(model_opt)}, clip_ratio:{id(clip_ratio)}")
         ppo_state, policy_loss, value_loss, entropy, approx_kl, clip_fract, info_coef = update_ppo(
             ppo_state,
             batch_graphs,

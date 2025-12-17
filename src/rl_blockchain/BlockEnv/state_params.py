@@ -88,7 +88,7 @@ class EnvParams(environment.EnvParams):
     adj_matrix: jnp.ndarray = None  # same graph, but in a different struct
     nb_validators: jax.Array = None
     rewards_weights: jax.Array = None  # Weights for the rewards
-    max_steps_in_episode: int = 1000
+    max_steps_in_episode: jax.Array = 1000
 
     @classmethod
     def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int | jax.Array, key: jax.Array,
@@ -104,7 +104,7 @@ class EnvParams(environment.EnvParams):
         if (nb_validators is None) or (nb_validators == 0):
             # val_sample = jax.random.normal(key_nb_val) * (0.25 * nb_nodes) + (nb_nodes // 2)
             # nb_validators = jnp.clip(jnp.round(val_sample), 4, nb_nodes).astype(int)
-            nb_validators = jax.random.randint(key, (), minval=4, maxval=nb_nodes)
+            nb_validators = jax.random.randint(key, (), minval=4, maxval=nb_nodes, dtype=jnp.int32)
         else:
             nb_validators = jnp.asarray(nb_validators, dtype=jnp.int32)
 
@@ -113,7 +113,7 @@ class EnvParams(environment.EnvParams):
             adj_matrix=norm_adj_matrix,
             nb_validators=nb_validators,
             rewards_weights=rewards_weights_jnp / rewards_weights_jnp.sum(),
-            max_steps_in_episode=max_steps_in_episode,
+            max_steps_in_episode=jnp.uint32(max_steps_in_episode),
         )
 
     @classmethod
