@@ -44,7 +44,7 @@ def env_profiling(args):
         for _ in range(args.n_steps):
 
             key, subkey = jax.random.split(key)
-            action = env.sample_legal_action(state, params, subkey)
+            action = env.sample_legal_action(params, subkey)
             obs, state, reward, done, infos = env.step(subkey, state, action, params)
             if done:
                 state = env.reset()
@@ -71,7 +71,7 @@ def env_profiling(args):
         step_keys = flat_keys.reshape((T, B, 2))
 
         def step_fn(state, key):
-            action = env.sample_legal_action(state, params, key)
+            action = env.sample_legal_action(params, key)
             obs, state, reward, done, infos = env.step(key, state, action, params)
             return obs, state, reward, done, infos
 

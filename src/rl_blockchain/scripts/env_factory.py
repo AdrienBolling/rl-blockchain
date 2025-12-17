@@ -27,7 +27,7 @@ def white_param_fn(prev_param: TEnvParams, key: jax.Array, action: jax.Array) ->
 
 @jax.jit
 def change_val_param_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array) -> EnvParams:
-    return jax.lax.cond(action == 0, _sub_change_val_fn, _sub_white_param_fn, prev_param, key)
+    return _sub_change_val_fn(prev_param, key)
 
 
 def _sub_white_param_fn(prev_param: TEnvParams, key: jax.Array) -> TEnvParams:
@@ -53,7 +53,6 @@ def _sub_change_val_fn(prev_param: EnvParams, key: jax.Array) -> EnvParams:
         nb_validators=new_val,
         rewards_weights=prev_param.rewards_weights,
         max_steps_in_episode=prev_param.max_steps_in_episode,
-        max_outer_steps_in_episode=prev_param.max_outer_steps_in_episode,
     )
 
 
@@ -96,25 +95,11 @@ class EnvBuilder(abc.ABC):
 
 def compute_avg_value(infos: dict[str, jax.Array]) -> dict[str, jax.Array]:
     infos_keys = ["gini", "distance", "gini_reward", "distance_reward", "weighted_reward", "nb_validators"]
-    list_is_inner: jax.Array = infos["action_taken"] == -1
-    sum_inner = list_is_inner.sum()
     returned_infos = {}
     for key in infos_keys:
-        returned_infos[key] = ((infos[key] * list_is_inner).sum() / sum_inner).item()
-
-    returned_infos["nb_validators_std"] = compute_std_validators(infos).item()
+        returned_infos[key] = infos[key].mean()
+    returned_infos["nb_validators_std"] = infos["nb_validators"].std()
     return returned_infos
-
-
-def compute_std_validators(infos: dict[str, jax.Array]) -> jax.Array:
-    x = infos["nb_validators"]
-    list_is_inner: jax.Array = infos["action_taken"] == -1
-    sum_inner = list_is_inner.sum()
-    masked_mean = (x * list_is_inner).sum() / sum_inner
-    diff = x - masked_mean
-    var = (list_is_inner * diff * diff).sum() / sum_inner
-    std = jnp.sqrt(var)
-    return std
 
 
 class BlockchainEnvBuilder(EnvBuilder):

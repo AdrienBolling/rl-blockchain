@@ -1,11 +1,8 @@
 import distrax
-import jax
 import jraph as jr
 from flax import linen as nn
 from jax import numpy as jnp
 from jraph._src.utils import segment_sum
-
-from rl_blockchain.BlockEnv.BlockEnv import compute_legal_actions_obs
 
 
 def default_mlp_init(scale=0.05):
@@ -129,7 +126,7 @@ class PPOBackbone(nn.Module):
 
     @nn.compact
     def __call__(self, graph: jr.GraphsTuple):
-        graph = graph._replace(edges=graph.edges[:, None], globals=graph.globals[:, None])
+        graph = graph._replace(nodes=graph.nodes[:, None], edges=graph.edges[:, None], globals=graph.globals[:, None])
 
         projector = jr.GraphMapFeatures(
             embed_edge_fn=make_update_fn(self.backbone_gat_dim, pre_norm=False, last_activation=False),
@@ -188,22 +185,7 @@ class PPOActorHead(nn.Module):
     actor_gcn_dim: int
 
     @nn.compact
-    def __call__(self, shared_graph, mask):
-        # gat_gate = jr.GraphNetGAT(
-        #     update_edge_fn=make_update_fn(
-        #         [self.actor_gcn_dim, self.actor_gcn_dim * 2, self.actor_gcn_dim]),
-        #     update_node_fn=make_update_fn(
-        #         [self.actor_gcn_dim, self.actor_gcn_dim * 2, self.actor_gcn_dim]),
-        #     update_global_fn=make_update_fn(
-        #         [self.actor_gcn_dim * 2, self.actor_gcn_dim]),
-        #     attention_logit_fn=make_update_fn(
-        #         [self.actor_gcn_dim, self.actor_gcn_dim * 2, self.actor_gcn_dim, 1],
-        #         last_activation=False),
-        #     attention_reduce_fn=attention_reduce_fn,
-        #     aggregate_edges_for_nodes_fn=segment_sum,
-        #     aggregate_nodes_for_globals_fn=segment_sum,
-        #     aggregate_edges_for_globals_fn=segment_sum)
-
+    def __call__(self, shared_graph):
         graph_pi = jr.GraphNetwork(
             update_edge_fn=None,
             update_node_fn=make_update_fn(
@@ -211,12 +193,7 @@ class PPOActorHead(nn.Module):
             update_global_fn=None,
             aggregate_edges_for_nodes_fn=segment_sum)(shared_graph)
 
-        logits = jnp.concatenate([jnp.zeros(1), graph_pi.nodes.squeeze()]).squeeze()
-
-        full_inf = jnp.full((self.action_dim,), -jnp.inf)
-        masked_logits = jax.lax.select(mask, logits, full_inf)
-
-        return distrax.Categorical(logits=masked_logits)
+        return distrax.Categorical(logits=graph_pi.nodes.squeeze())
 
 
 class PPOCriticHead(nn.Module):
@@ -242,10 +219,8 @@ class PPOSeparate(nn.Module):
 
     @nn.compact
     def __call__(self, graph):
-        mask = jax.lax.stop_gradient(compute_legal_actions_obs(graph))
-
         shared = PPOBackbone(self.backbone_gat_dim)(graph)
-        pi = PPOActorHead(self.action_dim, self.actor_gcn_dim)(shared, mask)
+        pi = PPOActorHead(self.action_dim, self.actor_gcn_dim)(shared)
         v = PPOCriticHead(self.critic_gnn_dim)(shared)
 
         return v, pi

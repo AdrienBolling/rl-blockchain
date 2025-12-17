@@ -23,9 +23,6 @@ class NormRewState(EnvState):
                           rew_M2: float | jax.Array = 0.0) -> 'NormRewState':
         return cls(
             ring_history=state.ring_history,
-            chosen_nodes=state.chosen_nodes,
-            inner_step=state.inner_step,
-            global_step=state.global_step,
             rew_count=rew_count,
             rew_mean=rew_mean,
             rew_M2=rew_M2,

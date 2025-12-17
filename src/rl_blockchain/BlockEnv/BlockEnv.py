@@ -1,10 +1,12 @@
 from functools import partial
 from typing import Any
 
+import distrax
 import jax
 import jax.numpy as jnp
 import jraph
 from gymnax.environments import environment, spaces
+from jax.random import gumbel
 from jraph import GraphsTuple
 
 from rl_blockchain.BlockEnv.BlockchainGraph import create_jraph_from_adj_matrix_fast, STATIC_MASKS_DICT, \
@@ -57,13 +59,9 @@ class JraphSpace(spaces.Space):
         graph: jraph.GraphsTuple = create_jraph_from_adj_matrix_fast(adj_matrix, STATIC_MASKS_DICT[self.nb_nodes])
         sample_nb_val = self.validator_features.sample(validator_key)
 
-        bool_vector = _generate_random_chosen_nodes(self.nb_nodes, sample_nb_val, chosen_node_key)
-        vector_chosen = bool_vector[:, None].astype(self.features.dtype)
-        features_with_chosen = jnp.concat([vector_chosen, sample_features], axis=1)
-
         # Add the features to the graph
         graph_with_features = graph._replace(
-            nodes=features_with_chosen,
+            nodes=sample_features,
             globals=jnp.array([sample_nb_val]),
         )
         return graph_with_features
@@ -143,8 +141,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
             ),
             "chosen_nodes": spaces.Box(
                 low=0, high=1, shape=(self._static_params.nb_nodes,), dtype=jnp.bool),
-            "inner_step": spaces.Discrete(self._static_params.nb_nodes + 1),  # +1 for the global step
-            "global_step": spaces.Discrete(params.max_outer_steps_in_episode),
+            "global_step": spaces.Discrete(params.max_steps_in_episode),
         })
 
     def get_obs(self, state: EnvState, params: EnvParams = None, key=None) -> jraph.GraphsTuple:
@@ -153,46 +150,34 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         stake_distribution_relative = stake_distribution_abs / self._static_params.horizon / self._static_params.nb_nodes
         preprocessed_stake_distribution = preprocessing_validator_distribution(
             stake_distribution_relative, self._static_params.box_clip)
-        node_features = jnp.column_stack((state.chosen_nodes, preprocessed_stake_distribution))
-        nb_selected_nodes = jnp.sum(state.chosen_nodes)
-        global_features = params.nb_validators - nb_selected_nodes
-        global_features = jnp.array([global_features], dtype=jnp.float32)
+        global_features = jnp.array([params.nb_validators], dtype=jnp.float32)
 
-        obs_graph = params.network_graph._replace(nodes=node_features, globals=global_features)
+        obs_graph = params.network_graph._replace(nodes=preprocessed_stake_distribution, globals=global_features)
         return obs_graph
 
     def is_terminal(self, state: EnvState, params: EnvParams) -> jax.Array:
-        done_steps = state.global_step >= params.max_outer_steps_in_episode
+        done_steps = state.time >= params.max_steps_in_episode
         return jnp.array(done_steps)
 
-    def step_env(self, key: jax.Array, state: EnvState, action: int | float | jax.Array, params: EnvParams) -> tuple[
+    def step_env(self, key: jax.Array, state: EnvState, action: jax.Array, params: EnvParams) -> tuple[
         GraphsTuple, EnvState, jax.Array, jax.Array, dict[Any, Any]]:
-        selected_node = action_to_selected_node(action)
-
-        is_inner = jnp.array(selected_node != -1)
-
-        operand_state = (state, selected_node)
-        new_state = jax.lax.cond(is_inner,
-                                 lambda tup: EnvState.next_state_inner(tup[0], tup[1]),
-                                 lambda tup: EnvState.next_state_global(tup[0]),
-                                 operand_state
-                                 )
+        # TODO
+        new_state = EnvState.next_state(state, action)
 
         new_obs = self.get_obs(new_state, params)
-        mask = compute_legal_actions_state(state, params)
-        is_illegal_action = jnp.logical_not(mask[action])
+        is_illegal_action = action.sum() != params.nb_validators
         done = jnp.logical_or(self.is_terminal(new_state, params), is_illegal_action)
 
-        operand_reward = (state, new_state, params, self._static_params)
+        operand_reward = (action, new_state, params, self._static_params)
         reward, info = jax.lax.cond(
-            jnp.logical_or(is_illegal_action, is_inner),
+            is_illegal_action,
             lambda tup: null_reward(),
             lambda tup: weighted_rewards(tup[0], tup[1], tup[2], tup[3]),
             operand_reward
         )
-        reward_multiplied = reward * (params.nb_validators + 1)  # Scale reward by number of validators
+        reward_multiplied = reward
 
-        infos_2 = dict(**info, action_taken=selected_node, nb_validators=params.nb_validators)
+        infos_2 = dict(**info, nb_validators=params.nb_validators)
 
         return (
             jax.lax.stop_gradient(new_obs),
@@ -236,7 +221,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         return obs, state
 
     @partial(jax.jit, static_argnames=('self',))
-    def sample_legal_action(self, state: EnvState, params: EnvParams, key: jax.Array) -> jax.Array:
+    def sample_legal_action(self, params: EnvParams, key: jax.Array) -> jax.Array:
         """
         Sample a legal action in the environment.
 
@@ -247,42 +232,88 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         Returns:
             A legal action.
         """
-        legal_mask = compute_legal_actions_state(state, params)  # shape (A,)
-        legal_probs = legal_mask.astype(jnp.float32)
-        legal_probs = legal_probs / jnp.sum(legal_probs)  # normalisation
 
-        return jax.random.choice(key, a=legal_mask.shape[0], p=legal_probs)
+        return uniform_k_true_mask(key, self._static_params.nb_nodes, params.nb_validators)
 
 
-def compute_legal_actions(chosen_nodes: jax.Array, nb_val_to_choose: int) -> jnp.ndarray:
-    available = jnp.logical_not(chosen_nodes)
-    nb_nodes = chosen_nodes.shape[0]
+@partial(jax.jit, static_argnames=('N',))
+def uniform_k_true_mask(key, N, k):
+    """
+    Returns:
+        (N,) bool mask with exactly k True, uniformly sampled.
+    """
+    perm = jax.random.permutation(key, N)  # permutation uniforme
+    return (perm < k).astype(jnp.float32)
 
-    not_enough_validators = jnp.zeros((nb_nodes + 1,), dtype=bool)
-    too_much_validators = jnp.zeros((nb_nodes + 1,), dtype=bool)
 
-    not_enough_validators = not_enough_validators.at[1:].set(available)
-    not_enough_validators = not_enough_validators.at[0].set(False)
 
-    too_much_validators = too_much_validators.at[0].set(True)
+def _pl_gumbel_permutation(key, logits):
+    """
+    logits: (n,) vrais logits du modèle
+    returns: (n,) permutation pondérée (Plackett–Luce)
+    """
+    n = logits.shape[0]
+    g = gumbel(key, shape=(n,), dtype=logits.dtype)
+    scores = logits + g
+    return jnp.argsort(scores)[::-1]  # ordre décroissant
 
-    return jax.lax.select(
-        nb_val_to_choose > 0,
-        not_enough_validators,
-        too_much_validators
-    )
+
+def _mask_k_first_from_perm(perm, k):
+    """
+    perm: (n,)
+    k: scalar int, dynamic
+    returns mask (n,) where True iff index is in first k of perm
+    """
+    positions = jnp.argsort(perm)  # inverse permutation: positions[i] = rank of i
+    return positions < k
+
+
+def logp_prefix_pl(probs, perm, k):
+    """
+    logits: (n,)
+    perm: (n,) permutation sampled from PL (e.g. by pl_gumbel_permutation)
+    k: scalar int, dynamic
+    returns scalar log-probability of the first k items of perm under PL(logits)
+    """
+    # Use scaled positive weights (scale cancels in ratios)
+    W0 = 1
+    eps = 1e-12
+
+    def step(W, t):
+        idx = perm[t]
+        x = probs[idx]
+        logp_t = jnp.log(jnp.clip(x, eps)) - jnp.log(jnp.clip(W, eps))
+        return W - x, logp_t
+
+    _, logp_terms = jax.lax.scan(step, W0, jnp.arange(probs.shape[0]))
+    # Sum only first k terms without dynamic slicing
+    t = jnp.arange(probs.shape[0])
+    return jnp.sum(jnp.where(t < k, logp_terms, 0.0))
 
 
 @jax.jit
-def compute_legal_actions_state(state: EnvState, params: EnvParams) -> jnp.ndarray:
-    chosen_nodes = state.chosen_nodes
-    nb_validators = params.nb_validators
-    nb_val_to_choose = nb_validators - jnp.sum(chosen_nodes)
-    return compute_legal_actions(chosen_nodes, nb_val_to_choose)
+def sample_subset_with_logp(key: jax.Array, distrib: distrax.Categorical, k: int | jax.Array) \
+        -> tuple[jax.Array, jax.Array, jax.Array]:
+    """
+    Sample a subset of k items from n with Plackett-Luce model defined by logits.
+    Returns:
+        perm: (n,) permutation sampled from PL(logits)
+        mask: (n,) boolean mask of selected items
+        logp: scalar log-probability of the selected subset under PL(logits)
+    """
+    perm = _pl_gumbel_permutation(key, distrib.logits)
+    mask = _mask_k_first_from_perm(perm, k)
+    logp = logp_prefix_pl(distrib.probs, perm, k)
+    return perm, mask, logp
 
 
 @jax.jit
-def compute_legal_actions_obs(obs: GraphsTuple) -> jnp.ndarray:
-    chosen_nodes = obs.nodes[:, 0]
-    nb_val_to_choose = obs.globals[0]
-    return compute_legal_actions(chosen_nodes, nb_val_to_choose)
+def mode_subset(distrib: distrax.Categorical, k: int | jax.Array) -> jax.Array:
+    """
+    Get the mode subset of k items from n with Plackett-Luce model defined by logits.
+    Returns:
+        mask: (n,) boolean mask of selected items
+    """
+    sorted_indices = jnp.argsort(distrib.logits)[::-1]  # descending order
+    mask = _mask_k_first_from_perm(sorted_indices, k)
+    return mask

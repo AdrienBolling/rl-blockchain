@@ -17,7 +17,7 @@ from gymnax.environments.environment import TEnvParams
 from optax._src.base import GradientTransformationExtraArgs
 
 from rl_blockchain.BlockEnv import EnvParams
-from rl_blockchain.BlockEnv.BlockEnv import BlockchainEnv
+from rl_blockchain.BlockEnv.BlockEnv import BlockchainEnv, sample_subset_with_logp, mode_subset, logp_prefix_pl
 from rl_blockchain.BlockEnv.NormailzationWrapper import NormalizationWrapper
 from rl_blockchain.scripts.env_factory import LOG_TYPE, Outer_param_fn
 
@@ -46,8 +46,7 @@ def rollout(key_input, env: environment.Environment,
         obs, state, params, key = state_input
         next_key, key_step, key_net, key_params = jax.random.split(key, 4)
         value, action_distribution = model.apply(ppo_state.params, obs, )
-        action = action_distribution.sample(seed=key_net)
-        logp = action_distribution.log_prob(action)
+        perm, action, logp = sample_subset_with_logp(key_net, action_distribution, params.nb_validators)
 
         next_obs, next_state, reward, done, infos = env.step(
             key_step, state, action, params
@@ -55,7 +54,7 @@ def rollout(key_input, env: environment.Environment,
         next_params = update_param_fn(params, key_params, action)
 
         carry = [next_obs, next_state, next_params, next_key]
-        traj = (obs, action, logp, reward, done, value, infos)
+        traj = (obs, perm, logp, reward, done, value, infos)
         return carry, traj
 
     # Scan over episode step loop
@@ -68,8 +67,8 @@ def rollout(key_input, env: environment.Environment,
 
     last_value, _ = model.apply(ppo_state.params, obs_end)
     # Return masked sum of rewards accumulated by agent in episode
-    observations, actions, logps, rewards, dones, values, infos = trajs
-    return observations, actions, logps, rewards, dones, values, last_value, infos
+    observations, perms, logps, rewards, dones, values, infos = trajs
+    return observations, perms, logps, rewards, dones, values, last_value, infos
 
 
 @partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode', 'update_param_fn'))
@@ -88,7 +87,7 @@ def rollout_eval(key_input, env: environment.Environment,
         obs, state, params, key = state_input
         next_key, key_step, key_net, key_params = jax.random.split(key, 4)
         _, action_distribution = model.apply(ppo_state.params, obs)
-        action = action_distribution.mode()
+        action = mode_subset(action_distribution, params.nb_validators)
 
         next_obs, next_state, reward, done, infos = env.step(
             key_step, state, action, first_env_params
@@ -135,7 +134,7 @@ def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
 def update_ppo(
         ppo_state: PPOState,
         observation: jr.GraphsTuple,
-        actions: jnp.ndarray,
+        perms: jnp.ndarray,
         old_logps: jnp.ndarray,
         returns: jnp.ndarray,
         advantages: jnp.ndarray,
@@ -152,7 +151,7 @@ def update_ppo(
     Args:
         ppo_state: Current PPOState
         observation: Batched GraphsTuple of observations, shape [B, ...]
-        actions: Actions array, shape [B, action_dim]
+        perms: Actions taken, shape [B]
         old_logps: Log probabilities under old policy, shape [B]
         returns: Discounted returns, shape [B]
         advantages: GAE advantages, shape [B]
@@ -179,14 +178,15 @@ def update_ppo(
     # Loss function with aux outputs
     def loss_fn(model_params):
         # compute per-sample losses
-        def sample_loss(m_params, graph, a, old_lp, ret, adv, old_val):
+        def sample_loss(m_params, graph, perm, old_lp, ret, adv, old_val):
             value_pred, dist = model_apply(m_params, graph)
-            new_lp = dist.log_prob(a)
+            nb_validators = graph.globals[0]
+            new_lp = logp_prefix_pl(dist.probs, perm, nb_validators)
             ratio = jnp.exp(new_lp - old_lp)
 
             clipp_actor = jnp.clip(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
             policy_loss = -jnp.minimum(ratio * adv, clipp_actor * adv)
-            entropy = dist.entropy()
+            entropy = dist.entropy() # TODO
 
             value_pred_clipped = old_val + (value_pred - old_val).clip(
                 -clip_ratio, clip_ratio)
@@ -209,7 +209,7 @@ def update_ppo(
         )(
             model_params,
             observation,
-            actions,
+            perms,
             old_logps,
             returns,
             advantages,
@@ -308,7 +308,7 @@ def train_ppo(
 
         params_list = params_map(subkeys_params)
 
-        observations, acts, logps, rews, dones, vals, last_values, infos = vm_rollout(subkeys, params_list)
+        observations, perms, logps, rews, dones, vals, last_values, infos = vm_rollout(subkeys, params_list)
         # refined_value = compute_avg_value(infos)
 
         # Extract graphs and last graphs
@@ -331,7 +331,7 @@ def train_ppo(
             return x.reshape(-1, *x.shape[2:])
 
         # Flatten your action/logp/return/adv arrays
-        flat_a = flatten(acts)
+        flat_perms = flatten(perms)
         flat_lp = flatten(logps)
         flat_r = flatten(returns)
         flat_adv = flatten(advantages_norm)
@@ -341,7 +341,7 @@ def train_ppo(
         flat_graphs = jax.tree.map(flatten, observations)
 
         # Permute to get randomized minibatches
-        idx = jax.random.permutation(permutation_key, flat_a.shape[0])
+        idx = jax.random.permutation(permutation_key, flat_perms.shape[0])
         for start in range(0, idx.shape[0], batch_size):
             batch_idx = idx[start: start + batch_size]
 
@@ -352,7 +352,7 @@ def train_ppo(
             ppo_state, policy_loss, value_loss, entropy, approx_kl, clip_frac, info_coef = update_ppo(
                 ppo_state,
                 batch_graphs,  # env_states: a GraphsTuple PyTree
-                flat_a[batch_idx],  # actions
+                flat_perms[batch_idx],  # actions
                 flat_lp[batch_idx],  # old_logps
                 flat_r[batch_idx],  # returns
                 flat_adv[batch_idx],  # advantages
@@ -439,7 +439,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     subkeys_params = jax.random.split(params_key, num_envs)
 
     params_list = params_map(subkeys_params)
-    observations, acts, logps, rews, dones, vals, last_values, infos_env = vm_rollout(subkeys, params_list)
+    observations, perms, logps, rews, dones, vals, last_values, infos_env = vm_rollout(subkeys, params_list)
     logger.info(f"Epoch {epoch}: Collected {num_steps * num_envs} steps.")
 
     if log_fn is not None:
@@ -467,7 +467,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     def flatten(x):
         return x.reshape(-1, *x.shape[2:])
 
-    flat_a = flatten(acts)
+    flat_perms = flatten(perms)
     flat_lp = flatten(logps)
     flat_r = flatten(returns)
     flat_adv = flatten(advantages_norm)
@@ -476,7 +476,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     flat_graphs = jax.tree.map(flatten, observations)
 
     # Shuffle and minibatch updates
-    perm = jax.random.permutation(perm_key, flat_a.shape[0])
+    perm = jax.random.permutation(perm_key, flat_perms.shape[0])
     for start in range(0, perm.shape[0], batch_size):
         logger.info(f"Epoch {epoch}: Processing batch {start // batch_size + 1} / {perm.shape[0] // batch_size + 1}")
         idx = perm[start: start + batch_size]
@@ -484,7 +484,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
         ppo_state, policy_loss, value_loss, entropy, approx_kl, clip_fract, info_coef = update_ppo(
             ppo_state,
             batch_graphs,
-            flat_a[idx],
+            flat_perms[idx],
             flat_lp[idx],
             flat_r[idx],
             flat_adv[idx],
@@ -544,6 +544,7 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
              recorded_episodes: int = 10, batch_size: int = 10,
              log_fn: LOG_TYPE = None) -> dict[str, jax.Array]:
     steps_in_episode = int(env.default_params.max_steps_in_episode)
+
     @jax.jit
     def single_rollout_eval(rng: jax.Array, new_param: EnvParams):
         return rollout_eval(rng, env, model, ppo_state, new_param, update_params_fn,
