@@ -64,6 +64,7 @@ def train_ppo(ARGS: Namespace):
     sub_epoch = 0
 
     model, env, create_params_fn, log_fn, update_params_fn = get_env_config(ARGS, key_param)
+    env_train = env
 
     # If we need to resume a training, get the name of the checkpoint
     load_chkpt_name: pathlib.Path = ARGS.checkpoint
@@ -92,19 +93,17 @@ def train_ppo(ARGS: Namespace):
 
     key, key_eval = jax.random.split(key)
 
-    if normalize_rewards and isinstance(env, BlockchainEnv):
+    if normalize_rewards and isinstance(env_train, BlockchainEnv):
         # If using normalization, ensure the environment is wrapped accordingly
-        env = NormalizationWrapper(env)
+        env_train = NormalizationWrapper(env_train)
 
-    print(f"INIT ids env : {id(env)}")
-    print(f"INIT hashs env : {hash(env)}")
 
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
         model_opt = optax.adam(lr_fn(epoch))
         # Train for one epoch
         logger.info(f"Epoch {epoch + 1}/{num_epochs}")
-        ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env,
+        ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env_train,
                                            model=model, num_steps=num_steps,
                                            num_envs=num_envs, create_params_fn=create_params_fn,
                                            update_params_fn=update_params_fn,
