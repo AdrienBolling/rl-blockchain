@@ -49,7 +49,6 @@ def train_ppo(ARGS: Namespace):
     num_envs = ARGS.num_envs
     num_epochs = ARGS.num_epochs
     batch_size = ARGS.batch_size
-    normalize_rewards = True
     lr_fn = make_fct_value_array(ARGS.learning_rate, num_epochs)
     gamma = ARGS.gamma
     lambda_ = ARGS.lambda_
@@ -92,10 +91,6 @@ def train_ppo(ARGS: Namespace):
     ppo_state = create_ppo_state(resume_dir=load_chkpt_name, env=env, seed=ARGS.seed, lr=lr_fn(0), model=model)
 
     key, key_eval = jax.random.split(key)
-
-    if normalize_rewards and isinstance(env_train, BlockchainEnv):
-        # If using normalization, ensure the environment is wrapped accordingly
-        env_train = NormalizationWrapper(env_train)
 
 
     # Train the PPO agent

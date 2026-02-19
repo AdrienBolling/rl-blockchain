@@ -18,7 +18,6 @@ from optax._src.base import GradientTransformationExtraArgs
 
 from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.BlockEnv.BlockEnv import BlockchainEnv, sample_subset_with_logp, mode_subset, logp_prefix_pl
-from rl_blockchain.BlockEnv.NormailzationWrapper import NormalizationWrapper
 from rl_blockchain.scripts.env_factory import LOG_TYPE, Outer_param_fn
 
 logger = logging.getLogger(__name__)
