@@ -12,8 +12,6 @@ import wandb
 from gymnax.environments.environment import TEnvParams, Environment
 from tqdm import tqdm
 
-from rl_blockchain.BlockEnv import BlockchainEnv
-from rl_blockchain.BlockEnv.NormailzationWrapper import NormalizationWrapper
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch, load_ppo_state
 from rl_blockchain.algo.ppo import eval_ppo
 from rl_blockchain.scripts.env_factory import GenericEnvFactory, change_val_param_fn, white_param_fn, Outer_param_fn, \
@@ -31,8 +29,10 @@ def make_fct_value(inputs: list[float], nb_step: int) -> Callable[[int], float]:
         return lambda x: init + (last_value - init) * (x / (nb_step - 1))
     raise ValueError("Unexpected number of inputs: {}, must be 1 or 2".format(len(inputs)))
 
+
 def make_fct_value_array(inputs: list[float], nb_step: int) -> Callable[[int], jax.Array]:
     return lambda x: jnp.float32(make_fct_value(inputs, nb_step)(x))
+
 
 def train_ppo(ARGS: Namespace):
     """
@@ -91,7 +91,6 @@ def train_ppo(ARGS: Namespace):
     ppo_state = create_ppo_state(resume_dir=load_chkpt_name, env=env, seed=ARGS.seed, lr=lr_fn(0), model=model)
 
     key, key_eval = jax.random.split(key)
-
 
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
