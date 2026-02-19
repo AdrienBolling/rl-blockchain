@@ -167,7 +167,7 @@ def gini_coefficient(tensor: jnp.ndarray) -> jax.Array:
 
 
 @partial(jax.jit, static_argnames=['nb_node'])
-def gini_coefficient_worst(nb_val: float | jax.Array, nb_node: int) -> float:
+def gini_coefficient_worst(nb_val: float | jax.Array, nb_node: int) -> float | jax.Array:
     """
     Return the worst Gini index obtains with this parameters.
     :param nb_val: Number of validators

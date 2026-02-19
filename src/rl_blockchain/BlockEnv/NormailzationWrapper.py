@@ -6,88 +6,111 @@ from rl_blockchain.BlockEnv import EnvState, BlockchainEnv, EnvParams
 
 
 # ======================================================================
-# Reward Normalization Wrapper
+# Reward normalization state (wrapper-only, not env core)
 # ======================================================================
 
 @dataclass
-class NormRewState(EnvState):
-    """
-    Extension of the State class to include normalization parameters for rewards.
-    """
-    rew_count: int = 0
-    rew_mean: float = 0.0
-    rew_M2: float = 0.0
+class NormRewStats:
+    count: jax.Array  # shape=(), int32
+    mean: jax.Array  # shape=(), float32
+    m2: jax.Array  # shape=(), float32
 
     @classmethod
-    def create_from_state(cls, state: EnvState, rew_count: int = 0, rew_mean: float | jax.Array = 0.0,
-                          rew_M2: float | jax.Array = 0.0) -> 'NormRewState':
+    def init(cls):
         return cls(
-            ring_history=state.ring_history,
-            rew_count=rew_count,
-            rew_mean=rew_mean,
-            rew_M2=rew_M2,
-            time=state.time,
+            count=jnp.array(0, dtype=jnp.int32),
+            mean=jnp.array(0.0, dtype=jnp.float32),
+            m2=jnp.array(0.0, dtype=jnp.float32),
         )
 
+
+@dataclass
+class NormWrappedState:
+    env_state: EnvState
+    stats: NormRewStats
+
+
+# ======================================================================
+# Reward Normalization Wrapper
+# ======================================================================
 
 class NormalizationWrapper(BlockchainEnv):
     """
-    A wrapper for normalizing rewards in a reinforcement learning environment.
-    This wrapper maintains the mean and variance of the rewards to normalize them.
+    Running mean / std reward normalization using Welford.
     """
 
-    def __init__(self, block_env: BlockchainEnv, eps: float = 1e-8, clip_range: float = 10.0):
-        """
-        Initialize the NormalizationWrapper.
-
-        Args:
-            env: The environment to wrap.
-            eps: A small value to avoid division by zero.
-            clip_range: The range to clip the normalized rewards.
-        """
+    def __init__(
+            self,
+            block_env: BlockchainEnv,
+            eps: float = 1e-8,
+            clip_range: float | None = None,
+            min_count: int = 2,
+    ):
         super().__init__(block_env._first_params, block_env._static_params)
         self.eps = eps
         self.clip_range = clip_range
+        self.min_count = min_count
 
     def reset_env(self, key: jax.Array, params: EnvParams):
-        """
-        Reset the environment and return the initial state.
+        obs, env_state = super().reset_env(key, params)
+        state = NormWrappedState(
+            env_state=env_state,
+            stats=NormRewStats.init(),
+        )
+        return obs, state
 
-        Returns:
-            The initial state of the environment.
-        """
-        obs, state = super().reset_env(key, params)
-
-        # Create a new state with normalization parameters
-        norm_state = NormRewState.create_from_state(state)
-        return obs, norm_state
-
-    def step_env(self, key: jax.Array, state: NormRewState, action: int | float | jax.Array, params: EnvParams):
-        new_obs, new_state, reward, done, info = super().step_env(key, state, action, params)
-
-        # Perform normalization of the reward
-
-        # 2) Welford update
-        r = jnp.array(reward, dtype=jnp.float32)
-        cnt = state.rew_count + 1
-        delta = r - state.rew_mean
-        mean = state.rew_mean + delta / cnt
-        m2 = state.rew_M2 + delta * (r - mean)
-        var = m2 / cnt
-        std = jnp.sqrt(var)
-
-        # 3) Normalize
-        norm_r = r / (std + self.eps)
-
-        # 4) Conditionally clip if clip_range is defined
-        clipped_norm_r = jnp.clip(norm_r, -self.clip_range, self.clip_range)
-
-        # 5) Pack new state
-        new_state_norm = NormRewState.create_from_state(
-            new_state,
-            rew_count=cnt,
-            rew_mean=mean,
-            rew_M2=m2
+    def step_env(
+            self,
+            key: jax.Array,
+            state: NormWrappedState,
+            action,
+            params: EnvParams,
+    ):
+        obs, env_state, reward, done, info = super().step_env(
+            key, state.env_state, action, params
         )
 
-        return new_obs, new_state_norm, clipped_norm_r, done, info
+        r = jnp.asarray(reward, dtype=jnp.float32)
+
+        # Welford update
+        count = state.stats.count + 1
+        delta = r - state.stats.mean
+        mean = state.stats.mean + delta / count
+        delta2 = r - mean
+        m2 = state.stats.m2 + delta * delta2
+
+        # variance / std (safe for early steps)
+        var = jnp.where(
+            count >= self.min_count,
+            m2 / (count - 1),
+            jnp.array(1.0, dtype=jnp.float32),
+        )
+        std = jnp.sqrt(var)
+
+        # normalize (centered)
+        norm_r = (r - mean) / (std + self.eps)
+
+        # optional clipping
+        if self.clip_range is not None:
+            norm_r = jnp.clip(norm_r, -self.clip_range, self.clip_range)
+
+        new_state = NormWrappedState(
+            env_state=env_state,
+            stats=NormRewStats(
+                count=count,
+                mean=mean,
+                m2=m2,
+            ),
+        )
+
+        # diagnostics
+        info = dict(info)
+        info.update({
+            "rew_raw": r,
+            "rew_norm": norm_r,
+            "rew_mean": mean,
+            "rew_std": std,
+            "rew_count": count,
+        })
+
+        return obs, new_state, norm_r, done, info
