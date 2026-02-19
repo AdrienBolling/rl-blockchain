@@ -406,11 +406,6 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     Returns the updated PPOState.
     """
 
-    # TODO normalization of rewards
-    print(f"INIT ids:"
-          f"env: {id(env)}, model: {id(model)}, update_params_fn: {id(update_params_fn)}, num_steps: {id(num_steps)}")
-    print(f"INIT hashs:"
-          f"env: {hash(env)}, model: {hash(model)}, update_params_fn: {hash(update_params_fn)}, num_steps: {hash(num_steps)}")
 
     # Vectorized rollout
     @jax.jit

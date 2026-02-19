@@ -1,6 +1,7 @@
 import os
 import pathlib
-from argparse import ArgumentParser, Namespace
+from argparse import ArgumentParser, Namespace, ArgumentTypeError
+from enum import Enum
 
 REF_FILENAME = {
     7: "ref_grid_min_max/grid_7.csv",
@@ -9,9 +10,47 @@ REF_FILENAME = {
 }
 
 
+class UpdateParams(Enum):
+    NO_UPDATE = 0
+    THRESHOLD_UPDATE = 1
+    ORN_UHL_UPDATE = 2
+
+    def __str__(self):
+        return self.name
+
+
+def _update_params_type(value: str) -> UpdateParams:
+    """
+    Argparse-compatible type for UPDATE_PARAMS.
+    Accepts enum name (case-insensitive) or integer value.
+    """
+    # Try by name
+    try:
+        return UpdateParams[value.upper()]
+    except KeyError:
+        pass
+
+    # Try by integer value
+    try:
+        return UpdateParams(int(value))
+    except (ValueError, KeyError):
+        raise ArgumentTypeError(
+            f"Invalid update mode '{value}'. "
+            f"Allowed: {[e.name for e in UpdateParams]} "
+            f"or {[e.value for e in UpdateParams]}"
+        )
+
+
 def _parse_args() -> Namespace:
     # Create an argument parser
     parser = ArgumentParser(description="Run PPO training or evaluation.")
+
+    parser.add_argument(
+        "--jax-log-compiles",
+        action="store_true",
+        default=False,
+        help="If True, enable JAX debug mode. Default is False.",
+    )
 
     parser.add_argument(
         "--env",
@@ -61,13 +100,17 @@ def _parse_args() -> Namespace:
         "--logging-format",
         type=str,
         default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        help="Logging format. Default is '%(asctime)s - %(name)s - %(levelname)s - %(message)s'.",
+        help=(
+            "Logging format. Default is "
+            "'%%(asctime)s - %%(name)s - %%(levelname)s - %%(message)s'."
+        ),
     )
     parser.add_argument(
         "--logging-datefmt",
         type=str,
         default="%Y-%m-%d %H:%M:%S",
-        help="Date format for logging. Default is '%Y-%m-%d %H:%M:%S'.",
+        help="Date format for logging. Default is "
+             "'%%Y-%%m-%%d %%H:%%M:%%S'.",
     )
     parser.add_argument(
         "--logging-filename",
@@ -151,9 +194,14 @@ def _parse_args() -> Namespace:
 
     ppo_parser.add_argument(
         "--update-params",
-        action="store_true",
-        default=False,
-        help="If True, update the environment parameters during training/testing. Default is False.",
+        type=_update_params_type,
+        default=UpdateParams.NO_UPDATE.name,
+        help=(
+                "Method to update environment parameters during training. "
+                "Allowed values: "
+                + ", ".join([f"{e.name} ({e.value})" for e in UpdateParams])
+                + ". Default is 'NO_UPDATE'."
+        ),
     )
 
     mode_subparsers = ppo_parser.add_subparsers(dest="mode", required=True)

@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "sys_platform == 'linux'",
@@ -2526,9 +2526,6 @@ dependencies = [
     { name = "xprof" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f0/87/12627ffcd1d2c5479b9ebec299f8e7819527fa7b3aa389616285e5410870/tensorboard_plugin_profile-2.20.0.tar.gz", hash = "sha256:2fffe0687b9f86cc9666d49f7d4cfd13d002aaa468abb99886353e975c02064a", size = 3900, upload-time = "2025-06-11T22:21:45.992Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ea/37/e4dab910119d4db5c21f23a053bdb518ad537adb115c05b6af02f271e148/tensorboard_plugin_profile-2.20.0-py3-none-any.whl", hash = "sha256:d515d23c87421d6e79b18024b2e32c656aeb933e38f2983301f7d7e283c7fc46", size = 3914, upload-time = "2025-06-11T22:21:44.951Z" },
-]
 
 [[package]]
 name = "tensorflow-probability"
@@ -2833,9 +2830,6 @@ dependencies = [
     { name = "werkzeug" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3e/33/9381a740a18d61d7611d8118eb5865c489463e322f77429d1884537b7ba6/xprof-2.20.0.tar.gz", hash = "sha256:a37817c6a9ca80e130a48ba7cf7edcc6cefcd0761c5b4764fd85fe4e23f28ea0", size = 5926781, upload-time = "2025-06-11T22:21:43.045Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/25/8f/975340c46973dc80caed96ebf29778b9ff1f38f1f74147fbf64599c5f7cc/xprof-2.20.0-py3-none-any.whl", hash = "sha256:40d60cade83a22c6402455c7b9342034ccc1dc6a38da2470b2d342942a417303", size = 6016729, upload-time = "2025-06-11T22:21:41.437Z" },
-]
 
 [[package]]
 name = "yarl"

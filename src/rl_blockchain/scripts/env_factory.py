@@ -1,4 +1,5 @@
 import abc
+from functools import partial
 from typing import Callable, Dict, Tuple, Any, List
 
 import flax.linen as nn
@@ -12,7 +13,7 @@ from rl_blockchain.BlockEnv import StaticEnvParams, BlockchainEnv, EnvParams
 from rl_blockchain.BlockEnv.BlockchainGraph import make_rd_closed_adj_matrix, import_positions_from_file, \
     make_adj_matrix_from_positions
 from rl_blockchain.model import CategoricalSeparateMLP, PPOSeparate
-from rl_blockchain.scripts.parser import REF_FILENAME
+from rl_blockchain.scripts.parser import REF_FILENAME, UpdateParams
 
 # Type alias
 LOG_TYPE = Callable[[dict[str, jax.Array], jax.Array, jax.Array], dict[str, jax.Array]]
@@ -20,21 +21,75 @@ Outer_param_fn = Callable[[TEnvParams, jax.Array, jax.Array], TEnvParams]
 EnvInitOutput = Tuple[nn.Module, Environment, TEnvParams, Callable[[jax.Array], TEnvParams], LOG_TYPE]
 
 
+def return_update_params_fn(update_mode: UpdateParams) -> Outer_param_fn:
+    if update_mode == UpdateParams.NO_UPDATE:
+        return white_param_fn
+    elif update_mode == UpdateParams.THRESHOLD_UPDATE:
+        return change_val_param_fn
+    elif update_mode == UpdateParams.ORN_UHL_UPDATE:
+        return change_val_orn_uhl_fn
+    else:
+        raise ValueError(f"Unsupported update mode: {update_mode}")
+
+
 @jax.jit
 def white_param_fn(prev_param: TEnvParams, key: jax.Array, action: jax.Array) -> TEnvParams:
     return prev_param
 
 
+@partial(jax.jit, static_argnames=("max_nb_val",))
+def random_validator_step(
+        key: jax.Array,
+        current_k: jnp.int32,
+        max_nb_val: int,
+        sigma: float = 0.1,  # 10% std
+        alpha: float = 0.05  # mean reversion strength
+):
+    """
+    One jittable step of bounded mean-reverting random walk
+    for validator count selection.
+    Based on the Ornstein-Uhlenbeck process with projection to bounds and integer constraint.
+    """
+
+    mu = max_nb_val // 4
+    min_k = 4
+
+    # Gaussian percentage noise
+    eps = jax.random.normal(key) * sigma
+
+    # Convert to float for dynamics
+    k_float = current_k.astype(jnp.float32)
+
+    # Mean-reverting multiplicative dynamic
+    drift = alpha * (mu - k_float)
+    noise = k_float * eps
+
+    k_next = k_float + drift + noise
+
+    # Projection to bounds and integer constraint
+    k_next = jnp.clip(k_next, min_k, max_nb_val)
+    k_next = jnp.round(k_next).astype(jnp.int32)
+
+    return k_next
+
+
+def change_val_orn_uhl_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array) -> EnvParams:
+    key_thresh, key_gen = jax.random.split(key)
+
+    max_n = prev_param.network_graph.n_node[0]
+    new_val = random_validator_step(key_gen, prev_param.nb_validators, max_n)
+
+    return EnvParams(
+        network_graph=prev_param.network_graph,
+        adj_matrix=prev_param.adj_matrix,
+        nb_validators=new_val,
+        rewards_weights=prev_param.rewards_weights,
+        max_steps_in_episode=prev_param.max_steps_in_episode,
+    )
+
+
 @jax.jit
 def change_val_param_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array) -> EnvParams:
-    return _sub_change_val_fn(prev_param, key)
-
-
-def _sub_white_param_fn(prev_param: TEnvParams, key: jax.Array) -> TEnvParams:
-    return prev_param
-
-
-def _sub_change_val_fn(prev_param: EnvParams, key: jax.Array) -> EnvParams:
     key_thresh, key_gen = jax.random.split(key)
 
     # threshold
