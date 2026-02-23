@@ -12,10 +12,12 @@ import wandb
 from gymnax.environments.environment import TEnvParams, Environment
 from tqdm import tqdm
 
+from rl_blockchain.BlockEnv import BlockchainEnv
+from rl_blockchain.BlockEnv.NormailzationWrapper import NormalizationWrapper
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch, load_ppo_state
 from rl_blockchain.algo.ppo import eval_ppo
 from rl_blockchain.scripts.env_factory import GenericEnvFactory, change_val_param_fn, white_param_fn, Outer_param_fn, \
-    LOG_TYPE
+    LOG_TYPE, return_update_params_fn
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,7 @@ def train_ppo(ARGS: Namespace):
     num_envs = ARGS.num_envs
     num_epochs = ARGS.num_epochs
     batch_size = ARGS.batch_size
+    normalize_rewards = not ARGS.no_norm_rewards
     lr_fn = make_fct_value_array(ARGS.learning_rate, num_epochs)
     gamma = ARGS.gamma
     lambda_ = ARGS.lambda_
@@ -91,6 +94,10 @@ def train_ppo(ARGS: Namespace):
     ppo_state = create_ppo_state(resume_dir=load_chkpt_name, env=env, seed=ARGS.seed, lr=lr_fn(0), model=model)
 
     key, key_eval = jax.random.split(key)
+
+    if normalize_rewards and isinstance(env_train, BlockchainEnv):
+        # If using normalization, ensure the environment is wrapped accordingly
+        env_train = NormalizationWrapper(env_train)
 
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
@@ -148,7 +155,7 @@ def get_env_config(ARGS: Namespace, key_param: jax.Array) \
         raise ValueError(
             f"Unknown environment: {env_name}. Available environments: {GenericEnvFactory.available_environments()}")
     model, env, _, create_params_fn, log_fn = GenericEnvFactory.create(env_name, key_param, config)
-    update_params_fn = change_val_param_fn if ARGS.update_params else white_param_fn
+    update_params_fn = return_update_params_fn(ARGS.update_params)
     return model, env, create_params_fn, log_fn, update_params_fn
 
 

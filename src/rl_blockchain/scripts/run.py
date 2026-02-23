@@ -9,6 +9,7 @@ from rl_blockchain.utils.logging import setup_logging, setup_wandb
 logger = logging.getLogger(__name__)
 
 
+
 def main():
     # Parse the arguments
     args = _parse_args()
@@ -16,6 +17,7 @@ def main():
     if args.jax_log_compiles:
         config.update("jax_log_compiles", True)
         logger.info("JAX compilation logging enabled.")
+
 
     # Init the logging
 

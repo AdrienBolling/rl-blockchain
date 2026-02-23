@@ -405,7 +405,6 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     Returns the updated PPOState.
     """
 
-
     # Vectorized rollout
     @jax.jit
     def single_rollout(rng: jax.Array, new_param: EnvParams):

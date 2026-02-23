@@ -6,12 +6,12 @@
     requires-python = ">=3.13"
     dependencies = [
         "distrax>=0.1.5",
-        "flax>=0.10.6",
-        "jax>=0.6.1",
+        "flax>=0.12.4",
+        "jax>=0.9.0.1",
         "jraph>=0.0.6.dev0",
         "matplotlib>=3.10.3",
         "networkx>=3.4.2",
-        "optax>=0.2.4",
+        "optax>=0.2.6",
         "tqdm>=4.67.1",
         "wandb>=0.19.11",
         "gymnax"

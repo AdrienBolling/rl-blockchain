@@ -22,6 +22,7 @@ EnvInitOutput = Tuple[nn.Module, Environment, TEnvParams, Callable[[jax.Array], 
 
 
 def return_update_params_fn(update_mode: UpdateParams) -> Outer_param_fn:
+    print("update_mode : ", update_mode.name)
     if update_mode == UpdateParams.NO_UPDATE:
         return white_param_fn
     elif update_mode == UpdateParams.THRESHOLD_UPDATE:
@@ -37,57 +38,6 @@ def white_param_fn(prev_param: TEnvParams, key: jax.Array, action: jax.Array) ->
     return prev_param
 
 
-@partial(jax.jit, static_argnames=("max_nb_val",))
-def random_validator_step(
-        key: jax.Array,
-        current_k: jnp.int32,
-        max_nb_val: int,
-        sigma: float = 0.1,  # 10% std
-        alpha: float = 0.05  # mean reversion strength
-):
-    """
-    One jittable step of bounded mean-reverting random walk
-    for validator count selection.
-    Based on the Ornstein-Uhlenbeck process with projection to bounds and integer constraint.
-    """
-
-    mu = max_nb_val // 4
-    min_k = 4
-
-    # Gaussian percentage noise
-    eps = jax.random.normal(key) * sigma
-
-    # Convert to float for dynamics
-    k_float = current_k.astype(jnp.float32)
-
-    # Mean-reverting multiplicative dynamic
-    drift = alpha * (mu - k_float)
-    noise = k_float * eps
-
-    k_next = k_float + drift + noise
-
-    # Projection to bounds and integer constraint
-    k_next = jnp.clip(k_next, min_k, max_nb_val)
-    k_next = jnp.round(k_next).astype(jnp.int32)
-
-    return k_next
-
-
-def change_val_orn_uhl_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array) -> EnvParams:
-    key_thresh, key_gen = jax.random.split(key)
-
-    max_n = prev_param.network_graph.n_node[0]
-    new_val = random_validator_step(key_gen, prev_param.nb_validators, max_n)
-
-    return EnvParams(
-        network_graph=prev_param.network_graph,
-        adj_matrix=prev_param.adj_matrix,
-        nb_validators=new_val,
-        rewards_weights=prev_param.rewards_weights,
-        max_steps_in_episode=prev_param.max_steps_in_episode,
-    )
-
-
 @jax.jit
 def change_val_param_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array) -> EnvParams:
     key_thresh, key_gen = jax.random.split(key)
@@ -101,6 +51,57 @@ def change_val_param_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array
 
     # cond-select instead of Python
     new_val = jnp.where(cond, sampled, prev_param.nb_validators)
+
+    return EnvParams(
+        network_graph=prev_param.network_graph,
+        adj_matrix=prev_param.adj_matrix,
+        nb_validators=new_val,
+        rewards_weights=prev_param.rewards_weights,
+        max_steps_in_episode=prev_param.max_steps_in_episode,
+    )
+
+
+@jax.jit
+def random_validator_ornstein_uhlenbeck(
+        key: jax.Array,
+        current_k: jax.Array,  # int32 scalar
+        max_nb_val: jax.Array,  # int32 scalar
+        sigma: jax.Array = jnp.float32(0.1),
+        alpha: jax.Array = jnp.float32(0.05),
+) -> jax.Array:
+    """
+    One jittable step of bounded mean-reverting random walk for validator count selection.
+    Based on the Ornstein-Uhlenbeck process with projection to bounds and integer constraint.
+    """
+    max_nb_val = jnp.asarray(max_nb_val, dtype=jnp.int32)
+    current_k = jnp.asarray(current_k, dtype=jnp.int32)
+
+    # Target mean
+    mu = (max_nb_val // 4).astype(jnp.float32)
+    min_k = jnp.float32(4.0)
+
+    eps = jax.random.normal(key, ()) * sigma  # scalar
+    k_float = current_k.astype(jnp.float32)
+
+    drift = alpha * (mu - k_float)
+    noise = k_float * eps
+    k_next = k_float + drift + noise
+
+    k_next = jnp.clip(k_next, min_k, max_nb_val.astype(jnp.float32))
+    k_next = jnp.rint(k_next).astype(jnp.int32)
+    return k_next
+
+
+@jax.jit
+def change_val_orn_uhl_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array) -> EnvParams:
+    _, key_gen = jax.random.split(key)
+
+    max_n = prev_param.network_graph.n_node[0].astype(jnp.int32)  # stays as JAX scalar
+    new_val = random_validator_ornstein_uhlenbeck(
+        key_gen,
+        prev_param.nb_validators,
+        max_n,
+    )
 
     return EnvParams(
         network_graph=prev_param.network_graph,

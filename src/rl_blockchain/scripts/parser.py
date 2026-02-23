@@ -195,12 +195,12 @@ def _parse_args() -> Namespace:
     ppo_parser.add_argument(
         "--update-params",
         type=_update_params_type,
-        default=UpdateParams.NO_UPDATE.name,
+        default=UpdateParams.NO_UPDATE,
         help=(
                 "Method to update environment parameters during training. "
                 "Allowed values: "
                 + ", ".join([f"{e.name} ({e.value})" for e in UpdateParams])
-                + ". Default is 'NO_UPDATE'."
+                + f". Default is '{UpdateParams.NO_UPDATE}'."
         ),
     )
 
@@ -291,6 +291,13 @@ def _parse_args() -> Namespace:
         action="store_true",
         default=False,
         help="If True, normalize the advantages during training. Default is False.",
+    )
+
+    train_parser.add_argument(
+        "--no-norm-rewards",
+        action="store_true",
+        default=False,
+        help="If True, normalize the rewards during training. Default is False.",
     )
 
     eval_parser = mode_subparsers.add_parser("eval", help="Eval the PPO agent.")
