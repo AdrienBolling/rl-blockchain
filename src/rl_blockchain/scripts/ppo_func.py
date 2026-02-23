@@ -155,7 +155,7 @@ def get_env_config(ARGS: Namespace, key_param: jax.Array) \
         raise ValueError(
             f"Unknown environment: {env_name}. Available environments: {GenericEnvFactory.available_environments()}")
     model, env, _, create_params_fn, log_fn = GenericEnvFactory.create(env_name, key_param, config)
-    update_params_fn = return_update_params_fn(ARGS.update_params)
+    update_params_fn = return_update_params_fn(ARGS.update_params, ARGS.voting_nodes, ARGS.n_nodes)
     return model, env, create_params_fn, log_fn, update_params_fn
 
 

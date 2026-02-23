@@ -7,6 +7,7 @@ import gymnax
 import jax
 import jax.numpy as jnp
 from gymnax.environments.environment import Environment, TEnvParams
+from tensorflow_probability.substrates.jax.experimental.sequential import ensemble_kalman_filter_update
 
 from rl_blockchain import BlockEnv
 from rl_blockchain.BlockEnv import StaticEnvParams, BlockchainEnv, EnvParams
@@ -21,16 +22,18 @@ Outer_param_fn = Callable[[TEnvParams, jax.Array, jax.Array], TEnvParams]
 EnvInitOutput = Tuple[nn.Module, Environment, TEnvParams, Callable[[jax.Array], TEnvParams], LOG_TYPE]
 
 
-def return_update_params_fn(update_mode: UpdateParams) -> Outer_param_fn:
-    print("update_mode : ", update_mode.name)
+
+def return_update_params_fn(update_mode: UpdateParams, nb_val: int, nb_node: int) -> Outer_param_fn:
     if update_mode == UpdateParams.NO_UPDATE:
         return white_param_fn
-    elif update_mode == UpdateParams.THRESHOLD_UPDATE:
+    if update_mode == UpdateParams.THRESHOLD_UPDATE:
         return change_val_param_fn
-    elif update_mode == UpdateParams.ORN_UHL_UPDATE:
-        return change_val_orn_uhl_fn
-    else:
-        raise ValueError(f"Unsupported update mode: {update_mode}")
+    if update_mode == UpdateParams.ORN_UHL_UPDATE:
+        mu = jnp.float32(nb_node // 4 if nb_val == 0 else nb_val)
+        max_n = jnp.int32(nb_node)
+        return partial(change_val_orn_uhl_fn, mu=mu, max_n=max_n)
+
+    raise ValueError(f"Unsupported update mode: {update_mode}")
 
 
 @jax.jit
@@ -63,43 +66,43 @@ def change_val_param_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array
 
 @jax.jit
 def random_validator_ornstein_uhlenbeck(
-        key: jax.Array,
-        current_k: jax.Array,  # int32 scalar
-        max_nb_val: jax.Array,  # int32 scalar
-        sigma: jax.Array = jnp.float32(0.1),
-        alpha: jax.Array = jnp.float32(0.05),
+    key: jax.Array,
+    current_k: jax.Array,   # int32 scalar
+    mu: jax.Array,          # float32 scalar
+    max_nb_val: jax.Array,  # int32 scalar
+    sigma: jax.Array = jnp.float32(0.10),
+    alpha: jax.Array = jnp.float32(0.05),
 ) -> jax.Array:
-    """
-    One jittable step of bounded mean-reverting random walk for validator count selection.
-    Based on the Ornstein-Uhlenbeck process with projection to bounds and integer constraint.
-    """
-    max_nb_val = jnp.asarray(max_nb_val, dtype=jnp.int32)
     current_k = jnp.asarray(current_k, dtype=jnp.int32)
+    max_nb_val = jnp.asarray(max_nb_val, dtype=jnp.int32)
+    mu = jnp.asarray(mu, dtype=jnp.float32)
 
-    # Target mean
-    mu = (max_nb_val // 4).astype(jnp.float32)
-    min_k = jnp.float32(4.0)
+    min_k_f = jnp.float32(4.0)
 
-    eps = jax.random.normal(key, ()) * sigma  # scalar
-    k_float = current_k.astype(jnp.float32)
+    eps = jax.random.normal(key, ()) * sigma
+    k_f = current_k.astype(jnp.float32)
 
-    drift = alpha * (mu - k_float)
-    noise = k_float * eps
-    k_next = k_float + drift + noise
+    k_next = k_f + alpha * (mu - k_f) + k_f * eps
+    k_next = jnp.clip(k_next, min_k_f, max_nb_val.astype(jnp.float32))
+    return jnp.rint(k_next).astype(jnp.int32)
 
-    k_next = jnp.clip(k_next, min_k, max_nb_val.astype(jnp.float32))
-    k_next = jnp.rint(k_next).astype(jnp.int32)
-    return k_next
 
+# ---------- param update fn ----------
 
 @jax.jit
-def change_val_orn_uhl_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array) -> EnvParams:
+def change_val_orn_uhl_fn(
+    prev_param: EnvParams,
+    key: jax.Array,
+    action: jax.Array,
+    mu: jax.Array,          # float32 scalar
+    max_n: jax.Array,       # int32 scalar
+) -> EnvParams:
     _, key_gen = jax.random.split(key)
 
-    max_n = prev_param.network_graph.n_node[0].astype(jnp.int32)  # stays as JAX scalar
     new_val = random_validator_ornstein_uhlenbeck(
         key_gen,
         prev_param.nb_validators,
+        mu,
         max_n,
     )
 
