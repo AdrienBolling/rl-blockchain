@@ -86,7 +86,7 @@ class StaticEnvParams:
 class EnvParams(environment.EnvParams):
     network_graph: jraph.GraphsTuple = None  # Parameters
     adj_matrix: jnp.ndarray = None  # same graph, but in a different struct
-    nb_validators: jax.Array = None
+    nb_validators: jax.Array = None # TODO remove from here, keep only in the state
     rewards_weights: jax.Array = None  # Weights for the rewards
     max_steps_in_episode: jax.Array = 1000
 

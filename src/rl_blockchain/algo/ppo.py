@@ -51,6 +51,7 @@ def rollout(key_input, env: environment.Environment,
             key_step, state, action, params
         )
         next_params = update_param_fn(params, key_params, action)
+        next_obs = next_obs._replace(globals=next_params.nb_validators.astype(jnp.float32)[None])
 
         carry = [next_obs, next_state, next_params, next_key]
         traj = (obs, perm, logp, reward, done, value, infos)
@@ -92,6 +93,7 @@ def rollout_eval(key_input, env: environment.Environment,
             key_step, state, action, first_env_params
         )
         next_params = update_param_fn(params, key_params, action)
+        next_obs = next_obs._replace(globals=next_params.nb_validators.astype(jnp.float32)[None]) # TODO include it in the env
 
         carry = [next_obs, next_state, next_params, next_key]
         traj = (obs, action, reward, done, infos)
