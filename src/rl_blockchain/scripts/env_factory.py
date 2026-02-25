@@ -7,71 +7,57 @@ import gymnax
 import jax
 import jax.numpy as jnp
 from gymnax.environments.environment import Environment, TEnvParams
-from tensorflow_probability.substrates.jax.experimental.sequential import ensemble_kalman_filter_update
 
 from rl_blockchain import BlockEnv
-from rl_blockchain.BlockEnv import StaticEnvParams, BlockchainEnv, EnvParams
+from rl_blockchain.BlockEnv import StaticEnvParams, BlockchainEnv
 from rl_blockchain.BlockEnv.BlockchainGraph import make_rd_closed_adj_matrix, import_positions_from_file, \
     make_adj_matrix_from_positions
+from rl_blockchain.BlockEnv.state_params import Next_nb_val_fn, white_param_fn, EnvState, init_random_nb_val_factory
 from rl_blockchain.model import CategoricalSeparateMLP, PPOSeparate
 from rl_blockchain.scripts.parser import REF_FILENAME, UpdateParams
 
 # Type alias
 LOG_TYPE = Callable[[dict[str, jax.Array], jax.Array, jax.Array], dict[str, jax.Array]]
-Outer_param_fn = Callable[[TEnvParams, jax.Array, jax.Array], TEnvParams]
 EnvInitOutput = Tuple[nn.Module, Environment, TEnvParams, Callable[[jax.Array], TEnvParams], LOG_TYPE]
 
 
-
-def return_update_params_fn(update_mode: UpdateParams, nb_val: int, nb_node: int) -> Outer_param_fn:
+def return_update_params_fn(update_mode: UpdateParams, nb_val: int, nb_node: int) -> Next_nb_val_fn:
     if update_mode == UpdateParams.NO_UPDATE:
         return white_param_fn
     if update_mode == UpdateParams.THRESHOLD_UPDATE:
         return change_val_param_fn
     if update_mode == UpdateParams.ORN_UHL_UPDATE:
         mu = jnp.float32(nb_node // 4 if nb_val == 0 else nb_val)
-        max_n = jnp.int32(nb_node)
-        return partial(change_val_orn_uhl_fn, mu=mu, max_n=max_n)
+        return partial(change_val_orn_uhl_fn, mu=mu)
 
     raise ValueError(f"Unsupported update mode: {update_mode}")
 
 
 @jax.jit
-def white_param_fn(prev_param: TEnvParams, key: jax.Array, action: jax.Array) -> TEnvParams:
-    return prev_param
-
-
-@jax.jit
-def change_val_param_fn(prev_param: EnvParams, key: jax.Array, action: jax.Array) -> EnvParams:
+def change_val_param_fn(prev_state: EnvState, key: jax.Array) -> jax.Array:
     key_thresh, key_gen = jax.random.split(key)
 
     # threshold
     cond = jax.random.uniform(key_thresh) > 0.8
 
     # random integer in [4, n_nodes)
-    max_n = prev_param.network_graph.n_node[0]
+    max_n = prev_state.ring_history.shape[1]
     sampled = jax.random.randint(key_gen, (), minval=4, maxval=max_n)
 
     # cond-select instead of Python
-    new_val = jnp.where(cond, sampled, prev_param.nb_validators)
+    new_val = jnp.where(cond, sampled, prev_state.nb_val)
 
-    return EnvParams(
-        network_graph=prev_param.network_graph,
-        adj_matrix=prev_param.adj_matrix,
-        nb_validators=new_val,
-        rewards_weights=prev_param.rewards_weights,
-        max_steps_in_episode=prev_param.max_steps_in_episode,
-    )
+    return new_val
 
 
 @jax.jit
 def random_validator_ornstein_uhlenbeck(
-    key: jax.Array,
-    current_k: jax.Array,   # int32 scalar
-    mu: jax.Array,          # float32 scalar
-    max_nb_val: jax.Array,  # int32 scalar
-    sigma: jax.Array = jnp.float32(0.10),
-    alpha: jax.Array = jnp.float32(0.05),
+        key: jax.Array,
+        current_k: jax.Array,  # int32 scalar
+        mu: jax.Array,  # float32 scalar
+        max_nb_val: jax.Array,  # int32 scalar
+        sigma: jax.Array = jnp.float32(0.10),
+        alpha: jax.Array = jnp.float32(0.05),
 ) -> jax.Array:
     current_k = jnp.asarray(current_k, dtype=jnp.int32)
     max_nb_val = jnp.asarray(max_nb_val, dtype=jnp.int32)
@@ -91,27 +77,19 @@ def random_validator_ornstein_uhlenbeck(
 
 @jax.jit
 def change_val_orn_uhl_fn(
-    prev_param: EnvParams,
-    key: jax.Array,
-    action: jax.Array,
-    mu: jax.Array,          # float32 scalar
-    max_n: jax.Array,       # int32 scalar
-) -> EnvParams:
+        prev_state: EnvState,
+        key: jax.Array,
+        mu: jax.Array,  # float32 scalar
+) -> jax.Array:
     _, key_gen = jax.random.split(key)
 
-    new_val = random_validator_ornstein_uhlenbeck(
+    max_n = prev_state.ring_history.shape[1]
+
+    return random_validator_ornstein_uhlenbeck(
         key_gen,
-        prev_param.nb_validators,
+        prev_state.nb_val,
         mu,
         max_n,
-    )
-
-    return EnvParams(
-        network_graph=prev_param.network_graph,
-        adj_matrix=prev_param.adj_matrix,
-        nb_validators=new_val,
-        rewards_weights=prev_param.rewards_weights,
-        max_steps_in_episode=prev_param.max_steps_in_episode,
     )
 
 
@@ -178,12 +156,22 @@ class BlockchainEnvBuilder(EnvBuilder):
         self.validate_config(config)
         backbone_gat_dim, actor_gcn_dim, critic_gnn_dim = config["gat_arch"]
 
+        next_val_type = UpdateParams.NO_UPDATE if "next_val_type" not in config else config["next_val_type"]
+        nb_nodes = config["n_nodes"]
+
+        init_nb_val_fct = init_random_nb_val_factory(nb_nodes) if config["voting_nodes"] == 0 else config[
+            "voting_nodes"]
+        next_val_fct = return_update_params_fn(next_val_type, 0, nb_nodes)
+
         def create_params_fn(key: jax.Array) -> BlockEnv.EnvParams:
+
             return jax.lax.stop_gradient(BlockEnv.EnvParams.create_random(
                 config["n_nodes"],
                 key,
                 config["voting_nodes"],
-                config["reward_weights"]
+                config["reward_weights"],
+                init_nb_val_fct,
+                next_val_fct
             ))
 
         env_params = create_params_fn(key_param)
@@ -204,16 +192,22 @@ class BlockchainEnvCloseMapBuilder(BlockchainEnvBuilder):
 
         positions = import_positions_from_file(config["ref_map_file"])
 
+        next_val_type = UpdateParams.NO_UPDATE if "next_val_type" not in config else config["next_val_type"]
         nb_nodes = positions.shape[0]
+
+        init_nb_val_fct = init_random_nb_val_factory(nb_nodes) if config["voting_nodes"] == 0 else config[
+            "voting_nodes"]
+        next_val_fct = return_update_params_fn(next_val_type, 0, nb_nodes)
 
         def create_params_fn(key: jax.Array) -> BlockEnv.EnvParams:
             key_mat, key_create = jax.random.split(key)
             new_adj_mat = make_rd_closed_adj_matrix(positions, key_mat, 0.05)
+            # TODO need init et next_va_ fct
             return jax.lax.stop_gradient(
-                BlockEnv.EnvParams.create(new_adj_mat, config["voting_nodes"], key_create, config["reward_weights"]))
+                BlockEnv.EnvParams.create(new_adj_mat, init_nb_val_fct, next_val_fct, config["reward_weights"]))
 
         int_adj_mat = make_adj_matrix_from_positions(positions)
-        env_params = BlockEnv.EnvParams.create(int_adj_mat, config["voting_nodes"], key_param, config["reward_weights"])
+        env_params = BlockEnv.EnvParams.create(int_adj_mat, init_nb_val_fct, next_val_type, config["reward_weights"])
         static_params = StaticEnvParams.create(nb_nodes, REF_FILENAME[nb_nodes])
         env = BlockchainEnv(env_params, static_params)
         model = PPOSeparate(env.num_actions, backbone_gat_dim, actor_gcn_dim, critic_gnn_dim)

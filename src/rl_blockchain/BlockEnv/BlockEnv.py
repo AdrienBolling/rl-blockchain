@@ -161,11 +161,13 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
 
     def step_env(self, key: jax.Array, state: EnvState, action: jax.Array, params: EnvParams) -> tuple[
         GraphsTuple, EnvState, jax.Array, jax.Array, dict[Any, Any]]:
-        # TODO
-        new_state = EnvState.next_state(state, action)
+        """
+        The params parameter define the status of the next obs, not the current one
+        """
+        new_state = EnvState.next_state(state, params, action)
 
         new_obs = self.get_obs(new_state, params)
-        is_illegal_action = action.sum() != params.nb_validators
+        is_illegal_action = action.sum() != state.nb_val
         done = jnp.logical_or(self.is_terminal(new_state, params), is_illegal_action)
 
         operand_reward = (action, new_state, params, self._static_params)
@@ -177,7 +179,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         )
         reward_multiplied = reward
 
-        infos_2 = dict(**info, nb_validators=params.nb_validators)
+        infos_2 = dict(**info, nb_validators=state.nb_val)
 
         return (
             jax.lax.stop_gradient(new_obs),
@@ -216,7 +218,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         return obs, state, reward, done, info
 
     def reset_env(self, key: jax.Array, params: EnvParams) -> tuple[GraphsTuple, EnvState]:
-        state = EnvState.create_init_state(self._static_params.nb_nodes, self._static_params.horizon)
+        state = EnvState.create_init_state(key, params, self._static_params)
         obs = self.get_obs(state, params)
         return obs, state
 
@@ -233,7 +235,9 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
             A legal action.
         """
 
-        return uniform_k_true_mask(key, self._static_params.nb_nodes, params.nb_validators)
+        random_nb_val = params.init_nb_val_fn(key)
+
+        return uniform_k_true_mask(key, self._static_params.nb_nodes, random_nb_val)
 
 
 @partial(jax.jit, static_argnames=('N',))
@@ -244,7 +248,6 @@ def uniform_k_true_mask(key, N, k):
     """
     perm = jax.random.permutation(key, N)  # permutation uniforme
     return (perm < k).astype(jnp.float32)
-
 
 
 def _pl_gumbel_permutation(key, logits):

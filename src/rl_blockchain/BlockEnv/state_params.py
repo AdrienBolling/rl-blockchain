@@ -1,5 +1,6 @@
 import csv
 import os
+from typing import Callable
 
 import jax
 import jax.numpy as jnp
@@ -17,24 +18,33 @@ node_features_dict = {
 
 _box_clip = 4
 
+Next_nb_val_fn = Callable[["EnvState", jax.Array], jax.Array]
+Init_nb_val_fn = Callable[[jax.Array], jax.Array]
+
 
 @struct.dataclass
 class EnvState(environment.EnvState):
     ring_history: jax.Array
+    nb_val: jax.Array
 
     @classmethod
-    def create_init_state(cls, nb_nodes: int, horizon: int) -> 'EnvState':
+    def create_init_state(cls, key: jax.Array, params: "EnvParams", static_params: "StaticEnvParams") -> 'EnvState':
+        # TODO
+        new_nb_val = params.init_nb_val_fn(key)
         return cls(
-            ring_history=jnp.ones((horizon, nb_nodes), dtype=jnp.bool),
+            ring_history=jnp.ones((static_params.horizon, static_params.nb_nodes), dtype=jnp.bool),
+            nb_val=new_nb_val,
             time=0
         )
 
     @classmethod
-    def next_state(cls, previous_state: 'EnvState', new_chosen_nodes_list: jax.Array) -> 'EnvState':
+    def next_state(cls, previous_state: 'EnvState', params: "EnvParams",
+                   new_chosen_nodes_list: jax.Array) -> 'EnvState':
         horizon, nb_nodes = previous_state.ring_history.shape[0], previous_state.ring_history.shape[1]
         current_index = previous_state.time % horizon
         return cls(
             ring_history=previous_state.ring_history.at[current_index, :].set(new_chosen_nodes_list),
+            nb_val=params.next_nb_val_fn(previous_state),
             time=previous_state.time + 1
         )
 
@@ -82,18 +92,39 @@ class StaticEnvParams:
         )
 
 
+@jax.jit
+def white_param_fn(prev_state: EnvState, key: jax.Array) -> jax.Array:
+    return prev_state.nb_val
+
+
+def init_random_nb_val_factory(nb_node: int | jax.Array) -> Init_nb_val_fn:
+    @jax.jit
+    def init_random_nb_val_fn(key: jax.Array) -> jax.Array:
+        return jax.random.randint(key, (), minval=4, maxval=nb_node, dtype=jnp.int32)
+
+    return init_random_nb_val_fn
+
+
+def init_fixed_nb_val_factory(nb_val: int) -> Init_nb_val_fn:
+    @jax.jit
+    def init_fixed_nb_val_fn(key: jax.Array) -> jax.Array:
+        return jnp.asarray(nb_val, dtype=jnp.int32)
+
+    return init_fixed_nb_val_fn
+
+
 @struct.dataclass
 class EnvParams(environment.EnvParams):
+    init_nb_val_fn: Init_nb_val_fn = struct.field(pytree_node=False)
+    next_nb_val_fn: Next_nb_val_fn = struct.field(pytree_node=False)
     network_graph: jraph.GraphsTuple = None  # Parameters
     adj_matrix: jnp.ndarray = None  # same graph, but in a different struct
-    nb_validators: jax.Array = None # TODO remove from here, keep only in the state
     rewards_weights: jax.Array = None  # Weights for the rewards
     max_steps_in_episode: jax.Array = 1000
 
     @classmethod
-    def create(cls, adj_network_graph: jnp.ndarray, nb_validators: int | jax.Array, key: jax.Array,
+    def create(cls, adj_network_graph: jnp.ndarray, init_nb_val_fn: Init_nb_val_fn, next_nb_val_fn: Next_nb_val_fn,
                rewards_weights: list | jax.Array = None, max_steps_in_episode: int | None = 1000) -> 'EnvParams':
-        nb_nodes = adj_network_graph.shape[0]
         if rewards_weights is None:
             rewards_weights = [1, 1]
 
@@ -101,24 +132,19 @@ class EnvParams(environment.EnvParams):
 
         norm_adj_matrix = normalize_max(adj_network_graph)
 
-        if (nb_validators is None) or (nb_validators == 0):
-            # val_sample = jax.random.normal(key_nb_val) * (0.25 * nb_nodes) + (nb_nodes // 2)
-            # nb_validators = jnp.clip(jnp.round(val_sample), 4, nb_nodes).astype(int)
-            nb_validators = jax.random.randint(key, (), minval=4, maxval=nb_nodes, dtype=jnp.int32)
-        else:
-            nb_validators = jnp.asarray(nb_validators, dtype=jnp.int32)
-
         return cls(
             network_graph=create_jraph_from_adj_matrix(norm_adj_matrix),
             adj_matrix=norm_adj_matrix,
-            nb_validators=nb_validators,
             rewards_weights=rewards_weights_jnp / rewards_weights_jnp.sum(),
+            init_nb_val_fn=init_nb_val_fn,
+            next_nb_val_fn=next_nb_val_fn,
             max_steps_in_episode=jnp.uint32(max_steps_in_episode),
         )
 
     @classmethod
     def create_random(cls, nb_nodes: int, key: jax.Array, nb_validators: int | jax.Array = None,
                       rewards_weights: list | jax.Array = None,
+                      init_nb_val_fn: Init_nb_val_fn = None, next_nb_val_fn: Next_nb_val_fn = None,
                       max_steps: int | None = 1000) -> 'EnvParams':
         """
         Create randomized environment parameters.
@@ -127,13 +153,23 @@ class EnvParams(environment.EnvParams):
             key (jax.Array): JAX random key for reproducibility.
             nb_validators (int, optional): Number of validators. If None, a random number is generated.
             rewards_weights (list or jax.Array, optional): Weights for the rewards. If None, random weights are generated.
+            init_nb_val_fn (Init_nb_val_fn, optional):
+            next_nb_val_fn (Next_nb_val_fn, optional):
             max_steps (int, optional): Maximum number of steps in an episode. If None, it is set to `1000
         """
-        key_mat, key_rew_weights, key_next = jax.random.split(key, 3)
+        key_mat, key_rew_weights = jax.random.split(key, 2)
         adj_mat = create_rd_adj_matrix(nb_nodes, key_mat)
         if rewards_weights is None:
             rewards_weights = jax.random.uniform(key_rew_weights, shape=(2,), minval=0.0, maxval=1.0)
-        return cls.create(adj_mat, nb_validators, key_next, rewards_weights, max_steps)
+        if init_nb_val_fn is None:
+            if (nb_validators is None) or (nb_validators == 0):
+                init_nb_val_fn = init_random_nb_val_factory(nb_nodes)
+            else:
+                init_nb_val_fn = init_fixed_nb_val_factory(nb_validators)
+        if next_nb_val_fn is None:
+            next_nb_val_fn = white_param_fn
+
+        return cls.create(adj_mat, init_nb_val_fn, next_nb_val_fn, rewards_weights, max_steps)
 
 
 @jax.jit

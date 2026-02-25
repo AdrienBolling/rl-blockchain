@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Dict
 
 import jax
 import jax.numpy as jnp
@@ -54,12 +54,11 @@ def gini_reward(state: EnvState, params: EnvParams) -> tuple[jax.Array, jax.Arra
 def get_avg_distance(action: jax.Array, params: EnvParams) -> jax.Array:
     """
     Compute the average distance of the current state.
-    :param state: The current state of the environment.
+    :param action: The list of chosen nodes (1 for chosen, 0 for not chosen).
     :param params: The environment parameters.
     :return: The average distance of the current state.
     """
-    nb_val = params.nb_validators
-
+    nb_val = action.sum().astype(jnp.int32)
 
     # masque sur les lignes : on garde que les lignes où chosen_nodes == 1
     masked_rows = params.adj_matrix * action[:, None]
@@ -74,7 +73,8 @@ def get_avg_distance(action: jax.Array, params: EnvParams) -> jax.Array:
 _post_filter_distance = _gen_post_filter(0.5, 0.25)  # Default inflexion point and value for distance reward
 
 
-def distance_reward(action: jax.Array, params: EnvParams, static_params: StaticEnvParams) -> tuple[jax.Array, jax.Array]:
+def distance_reward(action: jax.Array, params: EnvParams, static_params: StaticEnvParams) -> tuple[
+    jax.Array, jax.Array]:
     # EnvParams
     """
     Make the reward relative to the best and worst value
@@ -84,7 +84,7 @@ def distance_reward(action: jax.Array, params: EnvParams, static_params: StaticE
     avg_delay = get_avg_distance(action, params)
 
     # the gain is the difference between the average delay of selected validators and the average delay of all nodes
-    dist_min, dist_max = static_params.distance_opt_array[params.nb_validators]
+    dist_min, dist_max = static_params.distance_opt_array[action.sum().astype(jnp.int32)]
     dist_ref = static_params.avg_distance
 
     gain = avg_delay - dist_ref
@@ -98,7 +98,7 @@ def distance_reward(action: jax.Array, params: EnvParams, static_params: StaticE
 
 @jax.jit
 def weighted_rewards(action: jax.Array, new_state: EnvState, params: EnvParams, static_params: StaticEnvParams) \
-        -> (jax.Array, dict):
+        -> tuple[jax.Array, Dict[str, jax.Array]]:
     gini_reward_value, gini_value = gini_reward(new_state, params)
     distance_reward_value, avg_value = distance_reward(action, params, static_params)
     weighted_value = jnp.array([gini_reward_value, distance_reward_value]) * params.rewards_weights
@@ -107,7 +107,7 @@ def weighted_rewards(action: jax.Array, new_state: EnvState, params: EnvParams, 
                                 "distance_reward": distance_reward_value, "weighted_reward": weighted_value_sum}
 
 
-def null_reward() -> (jax.Array, dict):
+def null_reward() -> tuple[jax.Array, Dict[str, jax.Array]]:
     return jnp.array(0.0, dtype=jnp.float32), {
         "gini": jnp.array(0, dtype=jnp.float32),
         "gini_reward": jnp.array(0, dtype=jnp.float32),

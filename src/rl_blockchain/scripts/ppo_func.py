@@ -16,7 +16,7 @@ from rl_blockchain.BlockEnv import BlockchainEnv
 from rl_blockchain.BlockEnv.NormailzationWrapper import NormalizationWrapper
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch, load_ppo_state
 from rl_blockchain.algo.ppo import eval_ppo
-from rl_blockchain.scripts.env_factory import GenericEnvFactory, change_val_param_fn, white_param_fn, Outer_param_fn, \
+from rl_blockchain.scripts.env_factory import GenericEnvFactory, change_val_param_fn, white_param_fn, Next_nb_val_fn, \
     LOG_TYPE, return_update_params_fn
 
 logger = logging.getLogger(__name__)
@@ -140,7 +140,7 @@ def train_ppo(ARGS: Namespace):
 
 
 def get_env_config(ARGS: Namespace, key_param: jax.Array) \
-        -> Tuple[flax.linen.Module, Environment, Callable[[jax.Array], TEnvParams], LOG_TYPE, Outer_param_fn]:
+        -> Tuple[flax.linen.Module, Environment, Callable[[jax.Array], TEnvParams], LOG_TYPE, Next_nb_val_fn]:
     env_name = ARGS.env.lower()
     if env_name == "blockenv":
         config = {"n_nodes": ARGS.n_nodes, "gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
