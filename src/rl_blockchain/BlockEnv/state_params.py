@@ -28,9 +28,9 @@ class EnvState(environment.EnvState):
     nb_val: jax.Array
 
     @classmethod
-    def create_init_state(cls, key: jax.Array, params: "EnvParams", static_params: "StaticEnvParams") -> 'EnvState':
+    def create_init_state(cls, key: jax.Array, static_params: "StaticEnvParams") -> 'EnvState':
         # TODO
-        new_nb_val = params.init_nb_val_fn(key)
+        new_nb_val = static_params.init_nb_val_fn(key)
         return cls(
             ring_history=jnp.ones((static_params.horizon, static_params.nb_nodes), dtype=jnp.bool),
             nb_val=new_nb_val,
@@ -38,13 +38,13 @@ class EnvState(environment.EnvState):
         )
 
     @classmethod
-    def next_state(cls, previous_state: 'EnvState', params: "EnvParams",
+    def next_state(cls, previous_state: 'EnvState', new_nb_val: jax.Array,
                    new_chosen_nodes_list: jax.Array) -> 'EnvState':
         horizon, nb_nodes = previous_state.ring_history.shape[0], previous_state.ring_history.shape[1]
         current_index = previous_state.time % horizon
         return cls(
             ring_history=previous_state.ring_history.at[current_index, :].set(new_chosen_nodes_list),
-            nb_val=params.next_nb_val_fn(previous_state),
+            nb_val=new_nb_val,
             time=previous_state.time + 1
         )
 
@@ -68,6 +68,8 @@ def load_min_max_array(filename: str) -> jax.Array:
 
 @struct.dataclass
 class StaticEnvParams:
+    init_nb_val_fn: Init_nb_val_fn = struct.field(pytree_node=False)
+    next_nb_val_fn: Next_nb_val_fn = struct.field(pytree_node=False)
     nb_nodes: int
     distance_opt_array: jax.Array  # Dictionary of optimal distance bounds for each number of validators
     avg_distance: float  # Average distance for the environment, can be the last avg distance
@@ -80,11 +82,15 @@ class StaticEnvParams:
 
     @classmethod
     def create(cls, nb_nodes: int, filename: str,
+               init_nb_val_fn: Init_nb_val_fn,
+               next_nb_val_fn: Next_nb_val_fn,
                horizon: int = 200) -> 'StaticEnvParams':
         min_max_array = load_min_max_array(filename)
         avg_distance = min_max_array[nb_nodes][0]
 
         return cls(
+            init_nb_val_fn=init_nb_val_fn,
+            next_nb_val_fn=next_nb_val_fn,
             nb_nodes=nb_nodes,
             distance_opt_array=min_max_array,
             avg_distance=avg_distance.item(),
@@ -115,15 +121,13 @@ def init_fixed_nb_val_factory(nb_val: int) -> Init_nb_val_fn:
 
 @struct.dataclass
 class EnvParams(environment.EnvParams):
-    init_nb_val_fn: Init_nb_val_fn = struct.field(pytree_node=False)
-    next_nb_val_fn: Next_nb_val_fn = struct.field(pytree_node=False)
     network_graph: jraph.GraphsTuple = None  # Parameters
     adj_matrix: jnp.ndarray = None  # same graph, but in a different struct
     rewards_weights: jax.Array = None  # Weights for the rewards
     max_steps_in_episode: jax.Array = 1000
 
     @classmethod
-    def create(cls, adj_network_graph: jnp.ndarray, init_nb_val_fn: Init_nb_val_fn, next_nb_val_fn: Next_nb_val_fn,
+    def create(cls, adj_network_graph: jnp.ndarray,
                rewards_weights: list | jax.Array = None, max_steps_in_episode: int | None = 1000) -> 'EnvParams':
         if rewards_weights is None:
             rewards_weights = [1, 1]
@@ -136,15 +140,12 @@ class EnvParams(environment.EnvParams):
             network_graph=create_jraph_from_adj_matrix(norm_adj_matrix),
             adj_matrix=norm_adj_matrix,
             rewards_weights=rewards_weights_jnp / rewards_weights_jnp.sum(),
-            init_nb_val_fn=init_nb_val_fn,
-            next_nb_val_fn=next_nb_val_fn,
             max_steps_in_episode=jnp.uint32(max_steps_in_episode),
         )
 
     @classmethod
     def create_random(cls, nb_nodes: int, key: jax.Array, nb_validators: int | jax.Array = None,
                       rewards_weights: list | jax.Array = None,
-                      init_nb_val_fn: Init_nb_val_fn = None, next_nb_val_fn: Next_nb_val_fn = None,
                       max_steps: int | None = 1000) -> 'EnvParams':
         """
         Create randomized environment parameters.
@@ -161,15 +162,16 @@ class EnvParams(environment.EnvParams):
         adj_mat = create_rd_adj_matrix(nb_nodes, key_mat)
         if rewards_weights is None:
             rewards_weights = jax.random.uniform(key_rew_weights, shape=(2,), minval=0.0, maxval=1.0)
-        if init_nb_val_fn is None:
-            if (nb_validators is None) or (nb_validators == 0):
-                init_nb_val_fn = init_random_nb_val_factory(nb_nodes)
-            else:
-                init_nb_val_fn = init_fixed_nb_val_factory(nb_validators)
-        if next_nb_val_fn is None:
-            next_nb_val_fn = white_param_fn
+        # TODO take it
+        # if init_nb_val_fn is None:
+        #     if (nb_validators is None) or (nb_validators == 0):
+        #         init_nb_val_fn = init_random_nb_val_factory(nb_nodes)
+        #     else:
+        #         init_nb_val_fn = init_fixed_nb_val_factory(nb_validators)
+        # if next_nb_val_fn is None:
+        #     next_nb_val_fn = white_param_fn
 
-        return cls.create(adj_mat, init_nb_val_fn, next_nb_val_fn, rewards_weights, max_steps)
+        return cls.create(adj_mat, rewards_weights, max_steps)
 
 
 @jax.jit

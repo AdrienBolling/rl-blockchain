@@ -64,8 +64,9 @@ def train_ppo(ARGS: Namespace):
     # Create environment parameters
 
     sub_epoch = 0
+    #TODO
 
-    model, env, create_params_fn, log_fn, update_params_fn = get_env_config(ARGS, key_param)
+    model, env, create_params_fn, log_fn= get_env_config(ARGS, key_param)
     env_train = env
 
     # If we need to resume a training, get the name of the checkpoint
@@ -107,7 +108,6 @@ def train_ppo(ARGS: Namespace):
         ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env_train,
                                            model=model, num_steps=num_steps,
                                            num_envs=num_envs, create_params_fn=create_params_fn,
-                                           update_params_fn=update_params_fn,
                                            batch_size=batch_size, model_opt=model_opt, gamma=gamma,
                                            lambda_=lambda_,
                                            clip_ratio=clip_ratio_fn(epoch), log_fn=log_fn,
@@ -124,7 +124,6 @@ def train_ppo(ARGS: Namespace):
                 env=env,
                 model=model,
                 create_params_fn=create_params_fn,
-                update_params_fn=update_params_fn,
                 num_episodes=ARGS.eval_episodes,
                 recorded_episodes=5,
                 log_fn=log_fn
@@ -140,7 +139,7 @@ def train_ppo(ARGS: Namespace):
 
 
 def get_env_config(ARGS: Namespace, key_param: jax.Array) \
-        -> Tuple[flax.linen.Module, Environment, Callable[[jax.Array], TEnvParams], LOG_TYPE, Next_nb_val_fn]:
+        -> Tuple[flax.linen.Module, Environment, Callable[[jax.Array], TEnvParams], LOG_TYPE]:
     env_name = ARGS.env.lower()
     if env_name == "blockenv":
         config = {"n_nodes": ARGS.n_nodes, "gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
@@ -155,15 +154,14 @@ def get_env_config(ARGS: Namespace, key_param: jax.Array) \
         raise ValueError(
             f"Unknown environment: {env_name}. Available environments: {GenericEnvFactory.available_environments()}")
     model, env, _, create_params_fn, log_fn = GenericEnvFactory.create(env_name, key_param, config)
-    update_params_fn = return_update_params_fn(ARGS.update_params, ARGS.voting_nodes, ARGS.n_nodes)
-    return model, env, create_params_fn, log_fn, update_params_fn
+    return model, env, create_params_fn, log_fn
 
 
 def eval_ppo_run(args: Namespace):
     key = jax.random.PRNGKey(args.seed)
     key_eval, state_key, key_param = jax.random.split(key, 3)
 
-    model, env, create_params_fn, log_fn, update_params_fn = get_env_config(args, key_param)
+    model, env, create_params_fn, log_fn= get_env_config(args, key_param)
 
     chkpt_dir: pathlib.Path = args.chkpt_dir
     ppo_state = load_ppo_state(chkpt_dir, state_key)
@@ -175,7 +173,6 @@ def eval_ppo_run(args: Namespace):
         key=key_eval,
         model=model,
         create_params_fn=create_params_fn,
-        update_params_fn=update_params_fn,
         num_episodes=args.eval_episodes,
         recorded_episodes=5,
         log_fn=log_fn

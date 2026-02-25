@@ -18,7 +18,7 @@ from optax._src.base import GradientTransformationExtraArgs
 
 from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.BlockEnv.BlockEnv import BlockchainEnv, sample_subset_with_logp, mode_subset, logp_prefix_pl
-from rl_blockchain.scripts.env_factory import LOG_TYPE, Next_nb_val_fn
+from rl_blockchain.scripts.env_factory import LOG_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ def rollout(key_input, env: environment.Environment,
         return carry, traj
 
     # Scan over episode step loop
-    (obs_end, _, _, _), trajs = jax.lax.scan(
+    (obs_end, _, _), trajs = jax.lax.scan(
         policy_step,
         [first_obs, first_state, key_episode],
         None,
@@ -94,7 +94,7 @@ def rollout_eval(key_input, env: environment.Environment,
         return carry, traj
 
     # Scan over episode step loop
-    (obs_end, _, _, _), trajs = jax.lax.scan(
+    (obs_end, _, _), trajs = jax.lax.scan(
         policy_step,
         [first_obs, first_state, key_episode],
         None,
@@ -250,7 +250,6 @@ def train_ppo(
         env: BlockchainEnv,
         model: nn.module,
         create_params_fn: Callable[[jax.Array], TEnvParams],
-        update_params_fn: Next_nb_val_fn,
         num_steps,
         num_envs,
         num_epochs,
@@ -287,7 +286,6 @@ def train_ppo(
             ppo_state,
             new_param,
             num_steps,
-            update_params_fn
         )
 
     vm_rollout = jax.vmap(single_rollout)
@@ -389,7 +387,7 @@ def eval_ppo_and_log(env: BlockchainEnv, model: nn.module, ppo_state: PPOState, 
 
 
 def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, model: nn.Module, num_steps: int,
-                num_envs: int, create_params_fn: Callable[[jax.Array], TEnvParams], update_params_fn: Next_nb_val_fn,
+                num_envs: int, create_params_fn: Callable[[jax.Array], TEnvParams],
                 batch_size: int,
                 model_opt: GradientTransformationExtraArgs, gamma: float, lambda_: float,
                 clip_ratio: float, log_fn: LOG_TYPE = None,
@@ -410,8 +408,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
             model,
             ppo_state,
             new_param,
-            num_steps,
-            update_params_fn
+            num_steps
         )
 
     vm_rollout = jax.vmap(single_rollout)
@@ -526,7 +523,7 @@ def create_checkpoint_manager(
 
 
 def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module, key: jax.Array,
-             create_params_fn: Callable[[jax.Array], TEnvParams], update_params_fn: Next_nb_val_fn,
+             create_params_fn: Callable[[jax.Array], TEnvParams],
              num_episodes: int = 10,
              recorded_episodes: int = 10, batch_size: int = 10,
              log_fn: LOG_TYPE = None) -> dict[str, jax.Array]:
@@ -534,7 +531,7 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
 
     @jax.jit
     def single_rollout_eval(rng: jax.Array, new_param: EnvParams):
-        return rollout_eval(rng, env, model, ppo_state, new_param, update_params_fn,
+        return rollout_eval(rng, env, model, ppo_state, new_param,
                             steps_in_episode)
 
     vm_rollouts = jax.vmap(single_rollout_eval)

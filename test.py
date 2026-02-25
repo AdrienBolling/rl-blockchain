@@ -35,10 +35,8 @@ def main():
     # Note: train_ppo currently prints metrics but does not return the final state.
     # If you update train_ppo to return PPOState, you can capture it like:
     # final_state = train_ppo(...)
-    ppo_state = train_ppo(env, model, create_params_fn, update_params_fn, num_steps, num_envs, num_epochs, batch_size,
-                          lr, gamma, lambda_,
-                          clip_ratio,
-                          subkey, )
+    ppo_state = train_ppo(env, model, create_params_fn, num_steps, num_envs, num_epochs, batch_size, lr, gamma, lambda_,
+                          clip_ratio, subkey)
     key, subkey = jax.random.split(subkey)
     # ===== Evaluation =====
     print("[EVAL] Running evaluation with default (random) policy...")

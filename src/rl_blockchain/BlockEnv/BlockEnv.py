@@ -141,7 +141,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
             ),
             "chosen_nodes": spaces.Box(
                 low=0, high=1, shape=(self._static_params.nb_nodes,), dtype=jnp.bool),
-            "global_step": spaces.Discrete(params.max_steps_in_episode),
+            "global_step": spaces.Discrete(params.max_steps_in_episode.item()),
         })
 
     def get_obs(self, state: EnvState, params: EnvParams = None, key=None) -> jraph.GraphsTuple:
@@ -150,7 +150,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         stake_distribution_relative = stake_distribution_abs / self._static_params.horizon / self._static_params.nb_nodes
         preprocessed_stake_distribution = preprocessing_validator_distribution(
             stake_distribution_relative, self._static_params.box_clip)
-        global_features = jnp.array([params.nb_validators], dtype=jnp.float32)
+        global_features = jnp.array([state.nb_val], dtype=jnp.float32)
 
         obs_graph = params.network_graph._replace(nodes=preprocessed_stake_distribution, globals=global_features)
         return obs_graph
@@ -164,7 +164,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         """
         The params parameter define the status of the next obs, not the current one
         """
-        new_state = EnvState.next_state(state, params, action)
+        new_state = EnvState.next_state(state, self._static_params.next_nb_val_fn(state, key), action)
 
         new_obs = self.get_obs(new_state, params)
         is_illegal_action = action.sum() != state.nb_val
@@ -218,12 +218,12 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         return obs, state, reward, done, info
 
     def reset_env(self, key: jax.Array, params: EnvParams) -> tuple[GraphsTuple, EnvState]:
-        state = EnvState.create_init_state(key, params, self._static_params)
+        state = EnvState.create_init_state(key, self._static_params)
         obs = self.get_obs(state, params)
         return obs, state
 
     @partial(jax.jit, static_argnames=('self',))
-    def sample_legal_action(self, params: EnvParams, key: jax.Array) -> jax.Array:
+    def sample_legal_action(self, key: jax.Array) -> jax.Array:
         """
         Sample a legal action in the environment.
 
@@ -235,7 +235,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
             A legal action.
         """
 
-        random_nb_val = params.init_nb_val_fn(key)
+        random_nb_val = self._static_params.init_nb_val_fn(key)
 
         return uniform_k_true_mask(key, self._static_params.nb_nodes, random_nb_val)
 

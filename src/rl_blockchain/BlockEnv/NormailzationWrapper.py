@@ -29,6 +29,10 @@ class NormWrappedState:
     env_state: EnvState
     stats: NormRewStats
 
+    @property
+    def nb_val(self):
+        return self.env_state.nb_val
+
 
 # ======================================================================
 # Reward Normalization Wrapper

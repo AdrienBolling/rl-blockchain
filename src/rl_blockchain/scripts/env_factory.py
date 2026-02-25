@@ -164,18 +164,16 @@ class BlockchainEnvBuilder(EnvBuilder):
         next_val_fct = return_update_params_fn(next_val_type, 0, nb_nodes)
 
         def create_params_fn(key: jax.Array) -> BlockEnv.EnvParams:
-
             return jax.lax.stop_gradient(BlockEnv.EnvParams.create_random(
                 config["n_nodes"],
                 key,
                 config["voting_nodes"],
                 config["reward_weights"],
-                init_nb_val_fct,
-                next_val_fct
             ))
 
         env_params = create_params_fn(key_param)
-        static_params = StaticEnvParams.create(config["n_nodes"], REF_FILENAME[config["n_nodes"]])
+        static_params = StaticEnvParams.create(config["n_nodes"], REF_FILENAME[config["n_nodes"]], init_nb_val_fct,
+                                               next_val_fct)
         env = BlockchainEnv(env_params, static_params)
         # model = PPO_NET_GAT(gat1_out, gat2_out, gat2_nodes_out, env.num_actions)
         model = PPOSeparate(env.num_actions, backbone_gat_dim, actor_gcn_dim, critic_gnn_dim)
@@ -204,11 +202,11 @@ class BlockchainEnvCloseMapBuilder(BlockchainEnvBuilder):
             new_adj_mat = make_rd_closed_adj_matrix(positions, key_mat, 0.05)
             # TODO need init et next_va_ fct
             return jax.lax.stop_gradient(
-                BlockEnv.EnvParams.create(new_adj_mat, init_nb_val_fct, next_val_fct, config["reward_weights"]))
+                BlockEnv.EnvParams.create(new_adj_mat, config["reward_weights"]))
 
         int_adj_mat = make_adj_matrix_from_positions(positions)
-        env_params = BlockEnv.EnvParams.create(int_adj_mat, init_nb_val_fct, next_val_type, config["reward_weights"])
-        static_params = StaticEnvParams.create(nb_nodes, REF_FILENAME[nb_nodes])
+        env_params = BlockEnv.EnvParams.create(int_adj_mat, config["reward_weights"])
+        static_params = StaticEnvParams.create(nb_nodes, REF_FILENAME[nb_nodes], init_nb_val_fct, next_val_fct)
         env = BlockchainEnv(env_params, static_params)
         model = PPOSeparate(env.num_actions, backbone_gat_dim, actor_gcn_dim, critic_gnn_dim)
 

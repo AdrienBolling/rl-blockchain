@@ -41,7 +41,7 @@ def main():
     print("num_actions:", env.num_actions)
     mlpCat = CategoricalSeparateMLP(env.num_actions, 64, 2)
     create_params_fn = lambda key_map : env_params
-    ppo_state = train_ppo(env, mlpCat, create_params_fn, white_param_fn, num_steps, num_envs, num_epochs, batch_size, lr, gamma,
+    ppo_state = train_ppo(env, mlpCat, create_params_fn, num_steps, num_envs, num_epochs, batch_size, lr, gamma,
                           lambda_, clip_ratio, subkey)
     key, subkey = jax.random.split(subkey)
     # ===== Evaluation =====
