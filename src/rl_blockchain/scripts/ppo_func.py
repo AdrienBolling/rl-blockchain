@@ -16,8 +16,7 @@ from rl_blockchain.BlockEnv import BlockchainEnv
 from rl_blockchain.BlockEnv.NormailzationWrapper import NormalizationWrapper
 from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch, load_ppo_state
 from rl_blockchain.algo.ppo import eval_ppo
-from rl_blockchain.scripts.env_factory import GenericEnvFactory, change_val_param_fn, white_param_fn, Next_nb_val_fn, \
-    LOG_TYPE, return_update_params_fn
+from rl_blockchain.scripts.env_factory import GenericEnvFactory, LOG_TYPE
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +63,9 @@ def train_ppo(ARGS: Namespace):
     # Create environment parameters
 
     sub_epoch = 0
-    #TODO
+    # TODO
 
-    model, env, create_params_fn, log_fn= get_env_config(ARGS, key_param)
+    model, env, create_params_fn, log_fn = get_env_config(ARGS, key_param)
     env_train = env
 
     # If we need to resume a training, get the name of the checkpoint
@@ -143,11 +142,12 @@ def get_env_config(ARGS: Namespace, key_param: jax.Array) \
     env_name = ARGS.env.lower()
     if env_name == "blockenv":
         config = {"n_nodes": ARGS.n_nodes, "gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
-                  "reward_weights": ARGS.reward_weights}
+                  "reward_weights": ARGS.reward_weights, "next_val_type": ARGS.update_params}
     elif env_name == "blockenv_close_map":
         assert ARGS.ref_map_file is not None, "ref_map_file must be provided for blockenv_close_map"
         config = {"gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
-                  "reward_weights": ARGS.reward_weights, "ref_map_file": ARGS.ref_map_file}
+                  "reward_weights": ARGS.reward_weights, "ref_map_file": ARGS.ref_map_file,
+                  "next_val_type": ARGS.update_params}
     elif env_name == "cartpole":
         config = {}
     else:
@@ -161,7 +161,7 @@ def eval_ppo_run(args: Namespace):
     key = jax.random.PRNGKey(args.seed)
     key_eval, state_key, key_param = jax.random.split(key, 3)
 
-    model, env, create_params_fn, log_fn= get_env_config(args, key_param)
+    model, env, create_params_fn, log_fn = get_env_config(args, key_param)
 
     chkpt_dir: pathlib.Path = args.chkpt_dir
     ppo_state = load_ppo_state(chkpt_dir, state_key)

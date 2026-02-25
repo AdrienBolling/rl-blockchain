@@ -22,6 +22,7 @@ EnvInitOutput = Tuple[nn.Module, Environment, TEnvParams, Callable[[jax.Array], 
 
 
 def return_update_params_fn(update_mode: UpdateParams, nb_val: int, nb_node: int) -> Next_nb_val_fn:
+    print(update_mode.name)
     if update_mode == UpdateParams.NO_UPDATE:
         return white_param_fn
     if update_mode == UpdateParams.THRESHOLD_UPDATE:
