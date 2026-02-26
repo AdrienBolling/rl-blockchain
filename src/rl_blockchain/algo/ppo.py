@@ -210,6 +210,53 @@ def update_ppo(
             advantages,
             old_values
         )
+
+        all_finite = (
+                jnp.all(jnp.isfinite(total_loss)) &
+                jnp.all(jnp.isfinite(pl_batch)) &
+                jnp.all(jnp.isfinite(vl_batch)) &
+                jnp.all(jnp.isfinite(ent_batch)) &
+                jnp.all(jnp.isfinite(kl_batch))
+        )
+
+        def debug_branch(_):
+            bad = ~(
+                    jnp.isfinite(total_loss) &
+                    jnp.isfinite(pl_batch) &
+                    jnp.isfinite(vl_batch) &
+                    jnp.isfinite(ent_batch) &
+                    jnp.isfinite(kl_batch)
+            )
+            bad_count = jnp.sum(bad.astype(jnp.int32))
+            first = jnp.where(jnp.any(bad), jnp.argmax(bad.astype(jnp.int32)), -1)
+
+            # Pack scalars only (safe to transfer to host)
+            payload = (
+                bad_count,
+                first,
+                jnp.all(jnp.isfinite(total_loss)),
+                jnp.all(jnp.isfinite(pl_batch)),
+                jnp.all(jnp.isfinite(vl_batch)),
+                jnp.all(jnp.isfinite(ent_batch)),
+                jnp.all(jnp.isfinite(kl_batch)),
+            )
+
+            def host_fail(p):
+                (bc, fi, lf, pf, vf, ef, kf) = p
+                print(
+                    "DIVERGENCE(batch) | "
+                    f"bad_count={int(bc)} first_bad_index={int(fi)} | "
+                    f"loss_finite={bool(lf)} pl_finite={bool(pf)} vl_finite={bool(vf)} "
+                    f"ent_finite={bool(ef)} kl_finite={bool(kf)}",
+                    flush=True,
+                )
+                raise RuntimeError("NaN detected")
+
+            jax.debug.callback(host_fail, payload)
+            return 0
+
+        _ = jax.lax.cond(all_finite, lambda _: 0, debug_branch, None)
+
         # total_loss is array of shape [B], pl_batch/ vl_batch each shape [B]
         mean_loss = jnp.mean(total_loss)
         mean_pl_batch = jnp.mean(pl_batch)
