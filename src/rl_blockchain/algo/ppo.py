@@ -176,8 +176,10 @@ def update_ppo(
         def sample_loss(m_params, graph, perm, old_lp, ret, adv, old_val):
             value_pred, dist = model_apply(m_params, graph)
             nb_validators = graph.globals[0]
-            new_lp = logp_prefix_pl(dist.probs, perm, nb_validators)
-            ratio = jnp.exp(new_lp - old_lp)
+            new_lp = logp_prefix_pl(dist.logits, perm, nb_validators)
+            log_ratio = new_lp - old_lp
+            # log_ratio = jnp.clip(log_ratio, -20.0, 20.0)
+            ratio = jnp.exp(log_ratio)
 
             clipp_actor = jnp.clip(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
             policy_loss = -jnp.minimum(ratio * adv, clipp_actor * adv)
@@ -191,9 +193,8 @@ def update_ppo(
 
             total_loss = policy_loss + value_coef * value_loss - entropy * entropy_coef
 
-            approx_kl = ratio - 1.0 - (new_lp - old_lp)
+            approx_kl = ratio - 1.0 - log_ratio
             is_clipped = (jnp.abs(ratio - 1.0) > clip_ratio).astype(jnp.float32)
-
             return total_loss, (policy_loss, value_loss, entropy, approx_kl, is_clipped)
 
         # Vectorize over batch
@@ -211,51 +212,6 @@ def update_ppo(
             old_values
         )
 
-        all_finite = (
-                jnp.all(jnp.isfinite(total_loss)) &
-                jnp.all(jnp.isfinite(pl_batch)) &
-                jnp.all(jnp.isfinite(vl_batch)) &
-                jnp.all(jnp.isfinite(ent_batch)) &
-                jnp.all(jnp.isfinite(kl_batch))
-        )
-
-        def debug_branch(_):
-            bad = ~(
-                    jnp.isfinite(total_loss) &
-                    jnp.isfinite(pl_batch) &
-                    jnp.isfinite(vl_batch) &
-                    jnp.isfinite(ent_batch) &
-                    jnp.isfinite(kl_batch)
-            )
-            bad_count = jnp.sum(bad.astype(jnp.int32))
-            first = jnp.where(jnp.any(bad), jnp.argmax(bad.astype(jnp.int32)), -1)
-
-            # Pack scalars only (safe to transfer to host)
-            payload = (
-                bad_count,
-                first,
-                jnp.all(jnp.isfinite(total_loss)),
-                jnp.all(jnp.isfinite(pl_batch)),
-                jnp.all(jnp.isfinite(vl_batch)),
-                jnp.all(jnp.isfinite(ent_batch)),
-                jnp.all(jnp.isfinite(kl_batch)),
-            )
-
-            def host_fail(p):
-                (bc, fi, lf, pf, vf, ef, kf) = p
-                print(
-                    "DIVERGENCE(batch) | "
-                    f"bad_count={int(bc)} first_bad_index={int(fi)} | "
-                    f"loss_finite={bool(lf)} pl_finite={bool(pf)} vl_finite={bool(vf)} "
-                    f"ent_finite={bool(ef)} kl_finite={bool(kf)}",
-                    flush=True,
-                )
-                raise RuntimeError("NaN detected")
-
-            jax.debug.callback(host_fail, payload)
-            return 0
-
-        _ = jax.lax.cond(all_finite, lambda _: 0, debug_branch, None)
 
         # total_loss is array of shape [B], pl_batch/ vl_batch each shape [B]
         mean_loss = jnp.mean(total_loss)

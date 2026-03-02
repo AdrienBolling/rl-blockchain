@@ -271,27 +271,35 @@ def _mask_k_first_from_perm(perm, k):
     return positions < k
 
 
-def logp_prefix_pl(probs, perm, k):
+def logp_prefix_pl(log_p, perm, k):
     """
-    logits: (n,)
+    log_p: (n,) log-weights (log w_i)
     perm: (n,) permutation sampled from PL (e.g. by pl_gumbel_permutation)
-    k: scalar int, dynamic
-    returns scalar log-probability of the first k items of perm under PL(logits)
+    k: scalar int (dynamic)
+    returns scalar log-probability of the first k items of perm
+            under PL(log_p)
     """
-    # Use scaled positive weights (scale cancels in ratios)
-    W0 = 1
-    eps = 1e-12
 
-    def step(W, t):
-        idx = perm[t]
-        x = probs[idx]
-        logp_t = jnp.log(jnp.clip(x, eps)) - jnp.log(jnp.clip(W, eps))
-        return W - x, logp_t
+    # log W = log(sum remaining weights))
+    # logW0 = jax.nn.logsumexp(log_p)
+    logW0 = 0.0 # the distrax.categorical normalize the logits
 
-    _, logp_terms = jax.lax.scan(step, W0, jnp.arange(probs.shape[0]))
-    # Sum only first k terms without dynamic slicing
-    t = jnp.arange(probs.shape[0])
-    return jnp.sum(jnp.where(t < k, logp_terms, 0.0))
+    def step(logW, t):
+        def do(_):
+            idx = perm[t]
+            log_w_i = log_p[idx]
+            logp_t = log_w_i - logW
+            diff = jnp.clip(logp_t, a_max=-1e-6)
+            logW_new = logW + jnp.log1p(-jnp.exp(diff))
+            return logW_new, logp_t
+
+        def skip(_):
+            return logW, jnp.array(0.0, dtype=log_p.dtype)
+        return jax.lax.cond(t < k, do, skip, None)
+
+    _, logp_terms = jax.lax.scan(step, logW0, jnp.arange(log_p.shape[0]))
+
+    return jnp.sum(logp_terms)
 
 
 @jax.jit
@@ -306,7 +314,7 @@ def sample_subset_with_logp(key: jax.Array, distrib: distrax.Categorical, k: int
     """
     perm = _pl_gumbel_permutation(key, distrib.logits)
     mask = _mask_k_first_from_perm(perm, k)
-    logp = logp_prefix_pl(distrib.probs, perm, k)
+    logp = logp_prefix_pl(distrib.logits, perm, k)
     return perm, mask, logp
 
 
