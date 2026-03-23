@@ -151,8 +151,11 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         preprocessed_stake_distribution = preprocessing_validator_distribution(
             stake_distribution_relative, self._static_params.box_clip)
         global_features = jnp.array([state.nb_val], dtype=jnp.float32)
-
-        obs_graph = params.network_graph._replace(nodes=preprocessed_stake_distribution, globals=global_features)
+        edges = state.current_edges_unique[self._static_params.speeder.inverse]
+        obs_graph = self._static_params.empty_network_graph._replace(nodes=preprocessed_stake_distribution,
+                                                                     edges=edges,
+                                                                     globals=global_features)
+        # TODO
         return obs_graph
 
     def is_terminal(self, state: EnvState, params: EnvParams) -> jax.Array:
@@ -164,7 +167,10 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         """
         The params parameter define the status of the next obs, not the current one
         """
-        new_state = EnvState.next_state(state, self._static_params.next_nb_val_fn(state, key), action)
+        key_nb_val, key_dist = jax.random.split(key, 2)
+        new_nb_nodes = self._static_params.next_nb_val_fn(state, key_nb_val)
+        new_edge_distance = self._static_params.next_map_fn(key_dist, state, params)
+        new_state = EnvState.next_state(state, new_nb_nodes, new_edge_distance, action)
 
         new_obs = self.get_obs(new_state, params)
         is_illegal_action = action.sum() != state.nb_val
@@ -218,7 +224,7 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         return obs, state, reward, done, info
 
     def reset_env(self, key: jax.Array, params: EnvParams) -> tuple[GraphsTuple, EnvState]:
-        state = EnvState.create_init_state(key, self._static_params)
+        state = EnvState.create_init_state(key, params, self._static_params)
         obs = self.get_obs(state, params)
         return obs, state
 
@@ -282,7 +288,7 @@ def logp_prefix_pl(log_p, perm, k):
 
     # log W = log(sum remaining weights))
     # logW0 = jax.nn.logsumexp(log_p)
-    logW0 = 0.0 # the distrax.categorical normalize the logits
+    logW0 = 0.0  # the distrax.categorical normalize the logits
 
     def step(logW, t):
         def do(_):
@@ -295,6 +301,7 @@ def logp_prefix_pl(log_p, perm, k):
 
         def skip(_):
             return logW, jnp.array(0.0, dtype=log_p.dtype)
+
         return jax.lax.cond(t < k, do, skip, None)
 
     _, logp_terms = jax.lax.scan(step, logW0, jnp.arange(log_p.shape[0]))

@@ -10,35 +10,43 @@ REF_FILENAME = {
 }
 
 
-class UpdateParams(Enum):
-    NO_UPDATE = 0
-    THRESHOLD_UPDATE = 1
-    ORN_UHL_UPDATE = 2
+class ArgparseEnum(Enum):
+    """
+    Base Enum with argparse-compatible parsing.
+    Accepts enum name (case-insensitive) or integer value.
+    """
 
     def __str__(self):
         return self.name
 
+    @classmethod
+    def parse(cls, value: str):
+        # Try by name
+        try:
+            return cls[value.upper()]
+        except KeyError:
+            pass
 
-def _update_params_type(value: str) -> UpdateParams:
-    """
-    Argparse-compatible type for UPDATE_PARAMS.
-    Accepts enum name (case-insensitive) or integer value.
-    """
-    # Try by name
-    try:
-        return UpdateParams[value.upper()]
-    except KeyError:
-        pass
+        # Try by integer value
+        try:
+            return cls(int(value))
+        except (ValueError, KeyError):
+            raise ArgumentTypeError(
+                f"Invalid value '{value}'. "
+                f"Allowed names: {[e.name for e in cls]} "
+                f"or values: {[e.value for e in cls]}"
+            )
 
-    # Try by integer value
-    try:
-        return UpdateParams(int(value))
-    except (ValueError, KeyError):
-        raise ArgumentTypeError(
-            f"Invalid update mode '{value}'. "
-            f"Allowed: {[e.name for e in UpdateParams]} "
-            f"or {[e.value for e in UpdateParams]}"
-        )
+
+class UpdateValStrat(ArgparseEnum):
+    NO_UPDATE = 0
+    THRESHOLD_UPDATE = 1
+    ORN_UHL_UPDATE = 2
+
+
+class UpdateDistStrat(ArgparseEnum):
+    NO_UPDATE = 0
+    ORN_UHL_UPDATE = 1
 
 
 def _parse_args() -> Namespace:
@@ -194,13 +202,13 @@ def _parse_args() -> Namespace:
 
     ppo_parser.add_argument(
         "--update-params",
-        type=_update_params_type,
-        default=UpdateParams.NO_UPDATE,
+        type=UpdateValStrat.parse,
+        default=UpdateValStrat.NO_UPDATE,
         help=(
                 "Method to update environment parameters during training. "
                 "Allowed values: "
-                + ", ".join([f"{e.name} ({e.value})" for e in UpdateParams])
-                + f". Default is '{UpdateParams.NO_UPDATE}'."
+                + ", ".join([f"{e.name} ({e.value})" for e in UpdateValStrat])
+                + f". Default is '{UpdateValStrat.NO_UPDATE}'."
         ),
     )
 

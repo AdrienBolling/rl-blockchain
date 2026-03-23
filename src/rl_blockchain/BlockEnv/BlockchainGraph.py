@@ -1,11 +1,14 @@
 import json
 import pathlib
 from functools import partial
+from typing import Tuple
 
 import jax
 import jax.numpy as jnp
 import jraph
 import numpy as np
+
+from rl_blockchain.BlockEnv.state_params import generate_unique_inverse_senders_receivers, Speeders
 
 
 @jax.jit
@@ -31,7 +34,7 @@ def _create_pairwise_arrays(n):
 
 
 @partial(jax.jit, static_argnames=['n_nodes'])
-def create_rd_adj_matrix(n_nodes: int, key):
+def create_rd_adj_matrix(n_nodes: int, key: jax.Array) -> jax.Array:
     positions = jax.random.uniform(key, (n_nodes, 2))
     diff = positions[:, None, :] - positions[None, :, :]  # (n, n, 2)
     dists = jnp.linalg.norm(diff, axis=-1)
@@ -106,8 +109,26 @@ def get_non_diag_indices(n_nodes: int):
 def create_jraph_from_adj_matrix(adj_matrix: jnp.ndarray) -> jraph.GraphsTuple:
     _n_nodes = adj_matrix.shape[0]
     mask = get_non_diag_indices(_n_nodes)
-
     return create_jraph_from_adj_matrix_fast(adj_matrix, mask)
+
+@jax.jit
+def create_empty_jraph(n_nodes: int) -> jraph.GraphsTuple:
+    mask = get_non_diag_indices(n_nodes)
+    return create_empty_graph_fast(n_nodes, mask)
+
+
+def create_speeders(_n_nodes: int) -> Tuple[Tuple[jax.Array, jax.Array], Speeders]:
+    senders, receivers = _create_pairwise_arrays(_n_nodes)
+    unique, inverse = generate_unique_inverse_senders_receivers(senders, receivers, _n_nodes)
+    return (senders, receivers), Speeders(unique, inverse)
+
+
+@jax.jit
+def create_unique_from_adj_matrix(adj_matrix: jnp.ndarray) -> jax.Array:
+    _n_nodes = adj_matrix.shape[0]
+    mask = get_non_diag_indices(_n_nodes)
+    _, speeders = create_speeders(_n_nodes)
+    return adj_matrix.flatten().take(mask).take(speeders.unique)
 
 
 class DictOfMask(dict):
@@ -129,28 +150,31 @@ class DictOfMask(dict):
 STATIC_MASKS_DICT = DictOfMask()
 
 
-@jax.jit
-def create_jraph_from_adj_matrix_fast(adj_matrix: jnp.ndarray, non_diag_mask: jnp.ndarray) -> jraph.GraphsTuple:
-    senders, receivers = _create_pairwise_arrays(adj_matrix.shape[0])
+def create_empty_graph_fast(n_nodes: int, non_diag_mask: jnp.ndarray) -> jraph.GraphsTuple:
+    senders, receivers = _create_pairwise_arrays(n_nodes)
     senders_no_loop = senders.take(non_diag_mask)
     receivers_no_loop = receivers.take(non_diag_mask)
 
-    edge_features = adj_matrix.flatten().take(non_diag_mask)  # [:, None]
-
-    n_nodes = adj_matrix.shape[0]
     n_edges = n_nodes * (n_nodes - 1)
 
     graph = jraph.GraphsTuple(
         n_node=jnp.array([n_nodes]),
         n_edge=jnp.array([n_edges]),
         nodes=None,
-        edges=edge_features,
+        edges=None,
         senders=senders_no_loop,
         receivers=receivers_no_loop,
         globals=None,
     )
 
     return graph
+
+
+@jax.jit
+def create_jraph_from_adj_matrix_fast(adj_matrix: jnp.ndarray, non_diag_mask: jnp.ndarray) -> jraph.GraphsTuple:
+    empty_graph = create_empty_graph_fast(adj_matrix.shape[0], non_diag_mask)
+    edge_features = adj_matrix.flatten().take(non_diag_mask)  # [:, None]
+    return empty_graph._replace(edges=edge_features)
 
 
 @jax.jit

@@ -1,6 +1,7 @@
 import csv
 import os
-from typing import Callable
+from functools import partial
+from typing import Callable, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -8,7 +9,8 @@ import jraph
 from flax import struct
 from gymnax.environments import environment
 
-from rl_blockchain.BlockEnv.BlockchainGraph import create_jraph_from_adj_matrix, create_rd_adj_matrix, normalize_max
+from rl_blockchain.BlockEnv.BlockchainGraph import create_rd_adj_matrix, normalize_max, create_speeders, \
+    create_empty_jraph
 
 node_features_dict = {
     "node_id": 0,
@@ -20,31 +22,48 @@ _box_clip = 4
 
 Next_nb_val_fn = Callable[["EnvState", jax.Array], jax.Array]
 Init_nb_val_fn = Callable[[jax.Array], jax.Array]
+Next_map_fn = Callable[[jax.Array, "EnvState", "EnvParams"], jax.Array]
+
+
+@struct.dataclass
+class Speeders:
+    unique: jax.Array
+    inverse: jax.Array
+
+    @classmethod
+    def create(cls, nb_nodes: int) -> 'Speeders':
+        _, speeder = create_speeders(nb_nodes)
+        return speeder
 
 
 @struct.dataclass
 class EnvState(environment.EnvState):
     ring_history: jax.Array
+    current_edges_unique: jax.Array
     nb_val: jax.Array
 
+    def adj_matrix(self, speeders: Speeders) -> jnp.ndarray:
+        return self.current_edges_unique[speeders.inverse]
+
     @classmethod
-    def create_init_state(cls, key: jax.Array, static_params: "StaticEnvParams") -> 'EnvState':
-        # TODO
+    def create_init_state(cls, key: jax.Array, params: "EnvParams", static_params: "StaticEnvParams") -> 'EnvState':
         new_nb_val = static_params.init_nb_val_fn(key)
         return cls(
             ring_history=jnp.ones((static_params.horizon, static_params.nb_nodes), dtype=jnp.bool),
+            current_edges_unique=params.edge_config.edges_unique,
             nb_val=new_nb_val,
             time=0
         )
 
     @classmethod
-    def next_state(cls, previous_state: 'EnvState', new_nb_val: jax.Array,
+    def next_state(cls, previous_state: 'EnvState', new_nb_val: jax.Array, new_edges_dist: jax.Array,
                    new_chosen_nodes_list: jax.Array) -> 'EnvState':
         horizon, nb_nodes = previous_state.ring_history.shape[0], previous_state.ring_history.shape[1]
         current_index = previous_state.time % horizon
         return cls(
             ring_history=previous_state.ring_history.at[current_index, :].set(new_chosen_nodes_list),
             nb_val=new_nb_val,
+            current_edges_unique=new_edges_dist,
             time=previous_state.time + 1
         )
 
@@ -68,8 +87,11 @@ def load_min_max_array(filename: str) -> jax.Array:
 
 @struct.dataclass
 class StaticEnvParams:
+    empty_network_graph: jraph.GraphsTuple
+    speeder: Speeders
     init_nb_val_fn: Init_nb_val_fn = struct.field(pytree_node=False)
     next_nb_val_fn: Next_nb_val_fn = struct.field(pytree_node=False)
+    next_map_fn: Next_map_fn = struct.field(pytree_node=False)
     nb_nodes: int
     distance_opt_array: jax.Array  # Dictionary of optimal distance bounds for each number of validators
     avg_distance: float  # Average distance for the environment, can be the last avg distance
@@ -84,13 +106,16 @@ class StaticEnvParams:
     def create(cls, nb_nodes: int, filename: str,
                init_nb_val_fn: Init_nb_val_fn,
                next_nb_val_fn: Next_nb_val_fn,
+               next_map_fn: Next_map_fn,
                horizon: int = 200) -> 'StaticEnvParams':
         min_max_array = load_min_max_array(filename)
         avg_distance = min_max_array[nb_nodes][0]
-
         return cls(
+            empty_network_graph=create_empty_jraph(nb_nodes),
+            speeder=Speeders.create(nb_nodes),
             init_nb_val_fn=init_nb_val_fn,
             next_nb_val_fn=next_nb_val_fn,
+            next_map_fn=next_map_fn,
             nb_nodes=nb_nodes,
             distance_opt_array=min_max_array,
             avg_distance=avg_distance.item(),
@@ -119,16 +144,57 @@ def init_fixed_nb_val_factory(nb_val: int) -> Init_nb_val_fn:
     return init_fixed_nb_val_fn
 
 
+@partial(jax.jit, static_argnames=["nb_nodes"])
+def generate_unique_inverse_senders_receivers(senders: jax.Array, receivers: jax.Array, nb_nodes: int) -> \
+        Tuple[jax.Array, jax.Array]:
+    i = jnp.minimum(senders, receivers)
+    j = jnp.maximum(senders, receivers)
+    pair_id = i * nb_nodes + j
+
+    # unique sur pair_id
+    _, unique, inverse = jnp.unique(
+        pair_id,
+        return_inverse=True,
+        return_index=True,
+        size=nb_nodes * (nb_nodes - 1) // 2,  # nombre de paires non orientées
+    )
+    return unique, inverse
+
+
+@struct.dataclass
+class EdgesConfig:
+    edges_unique: jax.Array
+    sigma: Optional[jax.Array]
+
+
 @struct.dataclass
 class EnvParams(environment.EnvParams):
-    network_graph: jraph.GraphsTuple = None  # Parameters
-    adj_matrix: jnp.ndarray = None  # same graph, but in a different struct
+    # network_graph: jraph.GraphsTuple = None  # Parameters # TODO should be removed
+    # adj_matrix: jnp.ndarray = None  # same graph, but in a different struct //TODO
     rewards_weights: jax.Array = None  # Weights for the rewards
+    edge_config: EdgesConfig = None
     max_steps_in_episode: jax.Array = 1000
 
     @classmethod
-    def create(cls, adj_network_graph: jnp.ndarray,
-               rewards_weights: list | jax.Array = None, max_steps_in_episode: int | None = 1000) -> 'EnvParams':
+    def create(cls, adj_network_uniq: jnp.ndarray, list_sigma_value: Optional[jax.Array],
+               rewards_weights: Optional[list | jax.Array] = None,
+               max_steps_in_episode: int | None = 1000) -> 'EnvParams':
+
+        if rewards_weights is None:
+            rewards_weights = [1, 1]
+        if list_sigma_value is None:
+            list_sigma_value = jnp.zeros_like(adj_network_uniq)
+        rewards_weights_jnp = jnp.array(rewards_weights, dtype=jnp.float32)
+
+        return cls(
+            rewards_weights=rewards_weights_jnp / rewards_weights_jnp.sum(),
+            edge_config=EdgesConfig(adj_network_uniq, list_sigma_value),
+            max_steps_in_episode=jnp.uint32(max_steps_in_episode),
+        )
+
+    @classmethod
+    def create_old(cls, adj_network_graph: jnp.ndarray,
+                   rewards_weights: list | jax.Array = None, max_steps_in_episode: int | None = 1000) -> 'EnvParams':
         if rewards_weights is None:
             rewards_weights = [1, 1]
 
@@ -137,8 +203,8 @@ class EnvParams(environment.EnvParams):
         norm_adj_matrix = normalize_max(adj_network_graph)
 
         return cls(
-            network_graph=create_jraph_from_adj_matrix(norm_adj_matrix),
-            adj_matrix=norm_adj_matrix,
+            # network_graph=create_jraph_from_adj_matrix(norm_adj_matrix),
+            # adj_matrix=norm_adj_matrix,
             rewards_weights=rewards_weights_jnp / rewards_weights_jnp.sum(),
             max_steps_in_episode=jnp.uint32(max_steps_in_episode),
         )
@@ -162,15 +228,6 @@ class EnvParams(environment.EnvParams):
         adj_mat = create_rd_adj_matrix(nb_nodes, key_mat)
         if rewards_weights is None:
             rewards_weights = jax.random.uniform(key_rew_weights, shape=(2,), minval=0.0, maxval=1.0)
-        # TODO take it
-        # if init_nb_val_fn is None:
-        #     if (nb_validators is None) or (nb_validators == 0):
-        #         init_nb_val_fn = init_random_nb_val_factory(nb_nodes)
-        #     else:
-        #         init_nb_val_fn = init_fixed_nb_val_factory(nb_validators)
-        # if next_nb_val_fn is None:
-        #     next_nb_val_fn = white_param_fn
-
         return cls.create(adj_mat, rewards_weights, max_steps)
 
 
