@@ -119,11 +119,13 @@ def _random_distance_ornstein_uhlenbeck(
     return distance_next
 
 
+@jax.jit
 def next_edge_orn_uhl(key: jax.Array, state: EnvState, params: EnvParams) -> jax.Array:
     return _random_distance_ornstein_uhlenbeck(key, state.current_edges_unique, params.edge_config.edges_unique,
                                                params.edge_config.sigma)
 
 
+@jax.jit
 def next_edge_white(key: jax.Array, state: EnvState, params: EnvParams):
     return params.edge_config.edges_unique
 
@@ -236,6 +238,7 @@ class BlockchainEnvBuilder(EnvBuilder):
         non_diag_mask = STATIC_MASKS_DICT[nb_nodes]
         speeder = Speeders.create(nb_nodes)
 
+        @jax.jit
         def create_params_fn(key: jax.Array) -> BlockEnv.EnvParams:
             rd_adj_mat = create_rd_adj_matrix(nb_nodes, key)
             adj_mat_uniq = rd_adj_mat.flatten().take(non_diag_mask).take(speeder.unique)
@@ -280,6 +283,7 @@ class BlockchainEnvCloseMapBuilder(BlockchainEnvBuilder):
         ref_adj_mat_uniq = ref_adj_mat.flatten().take(STATIC_MASKS_DICT[nb_nodes])
         list_sigma = jnp.ones((ref_adj_mat_uniq.shape[0],), dtype=jnp.float32) * 0.05
 
+        @jax.jit
         def create_params_fn(key: jax.Array) -> BlockEnv.EnvParams:
             # key_mat, key_create = jax.random.split(key)
             # new_adj_mat = make_rd_closed_adj_matrix(positions, key_mat, 0.05)

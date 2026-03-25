@@ -163,6 +163,13 @@ def update_ppo(
         mean_policy_loss: Scalar
         mean_value_loss: Scalar
     """
+    jax.debug.print(
+        "shapes: old_logps={}, returns={}, advantages={}, old_values={}",
+        old_logps.shape,
+        returns.shape,
+        advantages.shape,
+        old_values.shape,
+    )
 
     info_coef = {
         "clip_ratio": clip_ratio,
@@ -211,7 +218,6 @@ def update_ppo(
             advantages,
             old_values
         )
-
 
         # total_loss is array of shape [B], pl_batch/ vl_batch each shape [B]
         mean_loss = jnp.mean(total_loss)
@@ -338,7 +344,7 @@ def train_ppo(
 
         # Permute to get randomized minibatches
         idx = jax.random.permutation(permutation_key, flat_perms.shape[0])
-        for start in range(0, idx.shape[0], batch_size):
+        for start in range(0, idx.shape[0] - batch_size + 1, batch_size):  # Drop the last batch to avoid recomputation
             batch_idx = idx[start: start + batch_size]
 
             # Slice out a minibatch of graphs
@@ -463,7 +469,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
 
     # Shuffle and minibatch updates
     perm = jax.random.permutation(perm_key, flat_perms.shape[0])
-    for start in range(0, perm.shape[0], batch_size):
+    for start in range(0, perm.shape[0] - batch_size + 1, batch_size):  # Drop the last batch to avoid recomputation
         logger.info(f"Epoch {epoch}: Processing batch {start // batch_size + 1} / {perm.shape[0] // batch_size + 1}")
         idx = perm[start: start + batch_size]
         batch_graphs = jax.tree.map(lambda x: x[idx], flat_graphs)
