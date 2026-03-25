@@ -163,13 +163,6 @@ def update_ppo(
         mean_policy_loss: Scalar
         mean_value_loss: Scalar
     """
-    jax.debug.print(
-        "shapes: old_logps={}, returns={}, advantages={}, old_values={}",
-        old_logps.shape,
-        returns.shape,
-        advantages.shape,
-        old_values.shape,
-    )
 
     info_coef = {
         "clip_ratio": clip_ratio,
@@ -431,6 +424,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     subkeys_params = jax.random.split(params_key, num_envs)
 
     params_list = params_map(subkeys_params)
+    # print("ppo_state id:", id(ppo_state))  # ← ICI
     observations, perms, logps, rews, dones, vals, last_values, infos_env = vm_rollout(subkeys, params_list)
     logger.info(f"Epoch {epoch}: Collected {num_steps * num_envs} steps.")
 
