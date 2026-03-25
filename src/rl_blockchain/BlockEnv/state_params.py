@@ -9,8 +9,8 @@ import jraph
 from flax import struct
 from gymnax.environments import environment
 
-from rl_blockchain.BlockEnv.BlockchainGraph import create_rd_adj_matrix, normalize_max, create_speeders, \
-    create_empty_jraph
+from rl_blockchain.BlockEnv.BlockchainGraph import create_rd_adj_matrix, normalize_max, \
+    create_empty_jraph, _create_pairwise_arrays, STATIC_MASKS_DICT
 
 node_features_dict = {
     "node_id": 0,
@@ -27,13 +27,19 @@ Next_map_fn = Callable[[jax.Array, "EnvState", "EnvParams"], jax.Array]
 
 @struct.dataclass
 class Speeders:
+    senders : jax.Array
+    receivers : jax.Array
     unique: jax.Array
     inverse: jax.Array
 
     @classmethod
     def create(cls, nb_nodes: int) -> 'Speeders':
-        _, speeder = create_speeders(nb_nodes)
-        return speeder
+        senders, receivers = _create_pairwise_arrays(nb_nodes)
+        mask = STATIC_MASKS_DICT[nb_nodes]
+        masked_senders = senders[mask]
+        masked_receivers = receivers[mask]
+        unique, inverse = generate_unique_inverse_senders_receivers(masked_senders, masked_receivers, nb_nodes)
+        return cls(masked_senders, masked_receivers, unique, inverse)
 
 
 @struct.dataclass
@@ -43,6 +49,7 @@ class EnvState(environment.EnvState):
     nb_val: jax.Array
 
     def adj_matrix(self, speeders: Speeders) -> jnp.ndarray:
+        # TODO
         return self.current_edges_unique[speeders.inverse]
 
     @classmethod

@@ -37,6 +37,15 @@ class ArgparseEnum(Enum):
                 f"or values: {[e.value for e in cls]}"
             )
 
+    @classmethod
+    def help(cls, desc:str) -> str:
+        return (
+                f"{desc}. "
+                "Allowed values: "
+                + ", ".join([f"{e.name} ({e.value})" for e in cls])
+                + f". Default is '{cls(0)}'."
+        )
+
 
 class UpdateValStrat(ArgparseEnum):
     NO_UPDATE = 0
@@ -204,12 +213,14 @@ def _parse_args() -> Namespace:
         "--update-params",
         type=UpdateValStrat.parse,
         default=UpdateValStrat.NO_UPDATE,
-        help=(
-                "Method to update environment parameters during training. "
-                "Allowed values: "
-                + ", ".join([f"{e.name} ({e.value})" for e in UpdateValStrat])
-                + f". Default is '{UpdateValStrat.NO_UPDATE}'."
-        ),
+        help=UpdateValStrat.help("Update strategy for the number of validators"),
+    )
+
+    ppo_parser.add_argument(
+        "--next-edge-type",
+        type=UpdateDistStrat.parse,
+        default=UpdateDistStrat.NO_UPDATE,
+        help=UpdateDistStrat.help("Update strategy for edges at each step"),
     )
 
     mode_subparsers = ppo_parser.add_subparsers(dest="mode", required=True)

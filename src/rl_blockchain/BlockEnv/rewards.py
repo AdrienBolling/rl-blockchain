@@ -51,22 +51,20 @@ def gini_reward(state: EnvState, params: EnvParams) -> tuple[jax.Array, jax.Arra
 
 
 # @jax.jit
-def get_avg_distance(action: jax.Array, state: EnvState, params: EnvParams) -> jax.Array:
+def get_avg_distance(action: jax.Array, state: EnvState, params: EnvParams,
+                     static_params: StaticEnvParams) -> jax.Array:
     """
     Compute the average distance of the current state.
     :param action: The list of chosen nodes (1 for chosen, 0 for not chosen).
     :param state: The current state of the environment.
     :param params: The environment parameters.
+    :param static_params: The static environment parameters.
     :return: The average distance of the current state.
     """
-    nb_val = action.sum().astype(jnp.int32)
-
-    # masque sur les lignes : on garde que les lignes où chosen_nodes == 1
-    masked_rows = state.adj_matrix(params.speeders) * action[:, None]
-    # masque sur les colonnes : on garde que les colonnes où chosen_nodes == 1
-    submatrix = masked_rows * action[None, :]
-
-    total = jnp.sum(submatrix)
+    edge_mask = action[static_params.speeder.senders] * action[static_params.speeder.receivers]
+    distances = state.current_edges_unique[static_params.speeder.inverse]
+    total = jnp.sum(edge_mask * distances)
+    nb_val = jnp.sum(action)
     denom = (nb_val - 1) * nb_val
     return total / denom
 
@@ -82,7 +80,7 @@ def distance_reward(action: jax.Array, state: EnvState, params: EnvParams, stati
     :return:
     """
 
-    avg_delay = get_avg_distance(action, state, params)
+    avg_delay = get_avg_distance(action, state, params, static_params)
 
     # the gain is the difference between the average delay of selected validators and the average delay of all nodes
     dist_min, dist_max = static_params.distance_opt_array[action.sum().astype(jnp.int32)]

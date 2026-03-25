@@ -1,14 +1,11 @@
 import json
 import pathlib
 from functools import partial
-from typing import Tuple
 
 import jax
 import jax.numpy as jnp
 import jraph
 import numpy as np
-
-from rl_blockchain.BlockEnv.state_params import generate_unique_inverse_senders_receivers, Speeders
 
 
 @jax.jit
@@ -111,24 +108,12 @@ def create_jraph_from_adj_matrix(adj_matrix: jnp.ndarray) -> jraph.GraphsTuple:
     mask = get_non_diag_indices(_n_nodes)
     return create_jraph_from_adj_matrix_fast(adj_matrix, mask)
 
-@jax.jit
+
 def create_empty_jraph(n_nodes: int) -> jraph.GraphsTuple:
     mask = get_non_diag_indices(n_nodes)
     return create_empty_graph_fast(n_nodes, mask)
 
 
-def create_speeders(_n_nodes: int) -> Tuple[Tuple[jax.Array, jax.Array], Speeders]:
-    senders, receivers = _create_pairwise_arrays(_n_nodes)
-    unique, inverse = generate_unique_inverse_senders_receivers(senders, receivers, _n_nodes)
-    return (senders, receivers), Speeders(unique, inverse)
-
-
-@jax.jit
-def create_unique_from_adj_matrix(adj_matrix: jnp.ndarray) -> jax.Array:
-    _n_nodes = adj_matrix.shape[0]
-    mask = get_non_diag_indices(_n_nodes)
-    _, speeders = create_speeders(_n_nodes)
-    return adj_matrix.flatten().take(mask).take(speeders.unique)
 
 
 class DictOfMask(dict):

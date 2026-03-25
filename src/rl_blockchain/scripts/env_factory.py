@@ -12,9 +12,9 @@ from gymnax.environments.environment import Environment, TEnvParams
 from rl_blockchain import BlockEnv
 from rl_blockchain.BlockEnv import StaticEnvParams, BlockchainEnv, create_rd_adj_matrix
 from rl_blockchain.BlockEnv.BlockchainGraph import import_positions_from_file, \
-    make_adj_matrix_from_positions, create_speeders, STATIC_MASKS_DICT
+    make_adj_matrix_from_positions, STATIC_MASKS_DICT
 from rl_blockchain.BlockEnv.state_params import Next_nb_val_fn, white_param_fn, EnvState, init_random_nb_val_factory, \
-    EnvParams, Next_map_fn
+    EnvParams, Next_map_fn, init_fixed_nb_val_factory, Speeders
 from rl_blockchain.model import CategoricalSeparateMLP, PPOSeparate
 from rl_blockchain.scripts.parser import REF_FILENAME, UpdateValStrat, UpdateDistStrat
 
@@ -230,16 +230,16 @@ class BlockchainEnvBuilder(EnvBuilder):
         next_val_type = UpdateValStrat.NO_UPDATE if "next_val_type" not in config else config["next_val_type"]
         nb_nodes = config["n_nodes"]
 
-        init_nb_val_fct = init_random_nb_val_factory(nb_nodes) if config["voting_nodes"] == 0 else config[
-            "voting_nodes"]
+        init_nb_val_fct = init_random_nb_val_factory(nb_nodes) if config["voting_nodes"] == 0 else \
+            init_fixed_nb_val_factory(config["voting_nodes"])
         next_val_fct = return_update_val_fn(next_val_type, 0, nb_nodes)
         non_diag_mask = STATIC_MASKS_DICT[nb_nodes]
-        _, speeder = create_speeders(nb_nodes)
+        speeder = Speeders.create(nb_nodes)
 
         def create_params_fn(key: jax.Array) -> BlockEnv.EnvParams:
             rd_adj_mat = create_rd_adj_matrix(nb_nodes, key)
             adj_mat_uniq = rd_adj_mat.flatten().take(non_diag_mask).take(speeder.unique)
-            list_sigma = jax.random.uniform(key, (nb_nodes,), minval=0, maxval=0.01)  # TODO make the max val change
+            list_sigma = jax.random.uniform(key, (adj_mat_uniq.shape[0],), minval=0, maxval=0.01)  # TODO make the max val change
 
             return jax.lax.stop_gradient(BlockEnv.EnvParams.create(
                 adj_mat_uniq,
@@ -272,8 +272,8 @@ class BlockchainEnvCloseMapBuilder(BlockchainEnvBuilder):
         next_edge_type = UpdateDistStrat.NO_UPDATE if "next_edge_type" not in config else config["next_edge_type"]
         nb_nodes = positions.shape[0]
 
-        init_nb_val_fct = init_random_nb_val_factory(nb_nodes) if config["voting_nodes"] == 0 else config[
-            "voting_nodes"]
+        init_nb_val_fct = init_random_nb_val_factory(nb_nodes) if config["voting_nodes"] == 0 else \
+            init_fixed_nb_val_factory(config["voting_nodes"])
         next_val_fct = return_update_val_fn(next_val_type, 0, nb_nodes)
 
         ref_adj_mat = make_adj_matrix_from_positions(positions)
@@ -293,7 +293,8 @@ class BlockchainEnvCloseMapBuilder(BlockchainEnvBuilder):
         int_adj_mat = make_adj_matrix_from_positions(positions)
         env_params = BlockEnv.EnvParams.create(int_adj_mat, config["reward_weights"])
         next_edge_fn = return_update_maps_fn(next_edge_type)
-        static_params = StaticEnvParams.create(nb_nodes, REF_FILENAME[nb_nodes], init_nb_val_fct, next_val_fct, next_map_fn=next_edge_fn)
+        static_params = StaticEnvParams.create(nb_nodes, REF_FILENAME[nb_nodes], init_nb_val_fct, next_val_fct,
+                                               next_map_fn=next_edge_fn)
         env = BlockchainEnv(env_params, static_params)
         model = PPOSeparate(env.num_actions, backbone_gat_dim, actor_gcn_dim, critic_gnn_dim)
 
