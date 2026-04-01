@@ -7,6 +7,7 @@ REF_FILENAME = {
     7: "ref_grid_min_max/grid_7.csv",
     10: "ref_grid_min_max/grid_10.csv",
     25: "ref_grid_min_max/grid_25.csv",
+    200: "ref_grid_min_max/grid_200.csv",
 }
 
 
