@@ -387,6 +387,10 @@ def eval_ppo_and_log(env: BlockchainEnv, model: nn.module, ppo_state: PPOState, 
     avg = sum(returns) / len(returns)
     print(f"Eval over {num_episodes} eps: avg return={avg:.3f}")
 
+def index_graph(x, idx, num_steps:int):
+    env_idx = idx // num_steps
+    step_idx = idx % num_steps
+    return x[env_idx, step_idx]
 
 def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, model: nn.Module, num_steps: int,
                 num_envs: int, create_params_fn: Callable[[jax.Array], TEnvParams],
@@ -466,7 +470,8 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     for start in range(0, perm.shape[0] - batch_size + 1, batch_size):  # Drop the last batch to avoid recomputation
         logger.info(f"Epoch {epoch}: Processing batch {start // batch_size + 1} / {perm.shape[0] // batch_size + 1}")
         idx = perm[start: start + batch_size]
-        batch_graphs = jax.tree.map(lambda x: x[idx], flat_graphs)
+        # batch_graphs = jax.tree.map(lambda x: x[idx], flat_graphs)
+        batch_graphs = jax.tree.map(lambda x: index_graph(x, idx, num_steps), observations)
         # print(f"ID elements : model.apply:{id(model.apply)}, model_opt:{id(model_opt)}, clip_ratio:{id(clip_ratio)}")
         ppo_state, policy_loss, value_loss, entropy, approx_kl, clip_fract, info_coef = update_ppo(
             ppo_state,
