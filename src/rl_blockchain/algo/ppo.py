@@ -463,7 +463,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     flat_adv = flatten(advantages_norm)
     flat_val = flatten(vals)
 
-    flat_graphs = jax.tree.map(flatten, observations)
+    # flat_graphs = jax.tree.map(flatten, observations)
 
     # Shuffle and minibatch updates
     perm = jax.random.permutation(perm_key, flat_perms.shape[0])
