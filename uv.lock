@@ -442,7 +442,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "absl-py" },
     { name = "attrs" },
-    { name = "numpy" },
+    { name = "numpy", marker = "python_full_version >= '3.13'" },
     { name = "wrapt" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a6/83/ce29720ccf934c6cfa9b9c95ebbe96558386e66886626066632b5e44afed/dm_tree-0.1.9.tar.gz", hash = "sha256:a4c7db3d3935a5a2d5e4b383fc26c6b0cd6f78c6d4605d3e7b518800ecd5342b", size = 35623 }
@@ -868,6 +868,15 @@ wheels = [
 ]
 
 [[package]]
+name = "iniconfig"
+version = "2.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/72/34/14ca021ce8e5dfedc35312d08ba8bf51fdd999c576889fc2c24cb97f4f10/iniconfig-2.3.0.tar.gz", hash = "sha256:c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730", size = 20503 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cb/b1/3846dd7f199d53cb17f49cba7e651e9ce294d8497c8c150530ed11865bb8/iniconfig-2.3.0-py3-none-any.whl", hash = "sha256:f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12", size = 7484 },
+]
+
+[[package]]
 name = "ipykernel"
 version = "6.29.5"
 source = { registry = "https://pypi.org/simple" }
@@ -955,7 +964,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jaxlib" },
     { name = "ml-dtypes" },
-    { name = "numpy" },
+    { name = "numpy", marker = "python_full_version >= '3.13'" },
     { name = "opt-einsum" },
     { name = "scipy" },
 ]
@@ -1742,6 +1751,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pluggy"
+version = "1.6.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f9/e2/3e91f31a7d2b083fe6ef3fa267035b518369d9511ffab804f839851d2779/pluggy-1.6.0.tar.gz", hash = "sha256:7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3", size = 69412 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/54/20/4d324d65cc6d9205fabedc306948156824eb9f0ee1633355a8f7ec5c66bf/pluggy-1.6.0-py3-none-any.whl", hash = "sha256:e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746", size = 20538 },
+]
+
+[[package]]
 name = "prometheus-client"
 version = "0.22.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1954,6 +1972,22 @@ wheels = [
 ]
 
 [[package]]
+name = "pytest"
+version = "9.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "iniconfig" },
+    { name = "packaging" },
+    { name = "pluggy" },
+    { name = "pygments" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/84/0e/b5858858d74958632c49b72cb25a3976ff9f632397626715be71c89d3971/pytest-9.1.0.tar.gz", hash = "sha256:41dd9148c08072446394cefd3d79701701335a9f4cae69ba92e39f6c7f5c061c", size = 1634181 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8b/5a/ba30a81239b909821b3153e303e7def45178bf353da4f72380e6c5e8793b/pytest-9.1.0-py3-none-any.whl", hash = "sha256:8ebb0e7888bdf2bdfc602ec51f8f62d50200af37356c74e503c79a94f5c81f32", size = 386453 },
+]
+
+[[package]]
 name = "python-dateutil"
 version = "2.9.0.post0"
 source = { registry = "https://pypi.org/simple" }
@@ -2135,6 +2169,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "notebook" },
+    { name = "pytest" },
     { name = "snakeviz" },
     { name = "tensorboard" },
     { name = "tensorboard-plugin-profile" },
@@ -2156,6 +2191,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "notebook", specifier = ">=7.4.2" },
+    { name = "pytest", specifier = ">=8.3.0" },
     { name = "snakeviz", specifier = ">=2.2.2" },
     { name = "tensorboard", specifier = ">=2.19.0" },
     { name = "tensorboard-plugin-profile", specifier = ">=2.19.6" },
@@ -2429,9 +2465,6 @@ dependencies = [
     { name = "werkzeug" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/5d/8a/eda81f2263f082136458eb81208c92777a7bb873275f2e34e78fd0762305/tensorboard_plugin_profile-2.19.6.tar.gz", hash = "sha256:2a1e96d5eed16040bc43a6bded78d00ba822cee0f102e6cebe8f31fb6ccd6d90", size = 5911366 }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/e8/c8/f7fe56103218f24564ed509636f76f3b1c4f529ddb568fc0c77760379135/tensorboard_plugin_profile-2.19.6-py3-none-any.whl", hash = "sha256:32329f261921cde841105d009561885fb927953f90f49b7239dc69ef01ee1f2b", size = 6006983 },
-]
 
 [[package]]
 name = "tensorflow-probability"
