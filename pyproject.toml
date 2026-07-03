@@ -23,4 +23,5 @@
         "snakeviz>=2.2.2",
         "tensorboard>=2.19.0",
         "tensorboard-plugin-profile>=2.19.6",
+        "pytest>=8.3.5",
     ]
