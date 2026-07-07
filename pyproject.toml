@@ -7,7 +7,7 @@
     dependencies = [
         "distrax>=0.1.7",
         "flax>=0.12.4",
-        "jax>=0.9.0.1",
+        "jax[cuda12]>=0.9.0.1",
         "jraph>=0.0.6.dev0",
         "matplotlib>=3.10.3",
         "networkx>=3.4.2",
@@ -16,6 +16,12 @@
         "wandb>=0.19.11",
         "gymnax",
 ]
+
+    [tool.uv]
+    # Ensure the lockfile always resolves to wheels installable on Linux x86_64
+    # (local machine + HPC). Without this, uv can lock a Windows-only wheel
+    # (e.g. tensorboard-plugin-profile 2.22.3) that fails to install here.
+    required-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
 
     [dependency-groups]
     dev = [

@@ -295,7 +295,7 @@ def logp_prefix_pl(log_p, perm, k):
             idx = perm[t]
             log_w_i = log_p[idx]
             logp_t = log_w_i - logW
-            diff = jnp.clip(logp_t, a_max=-1e-6)
+            diff = jnp.clip(logp_t, max=-1e-6)
             logW_new = logW + jnp.log1p(-jnp.exp(diff))
             return logW_new, logp_t
 
