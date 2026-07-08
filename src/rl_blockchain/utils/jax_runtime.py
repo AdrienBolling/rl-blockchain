@@ -1,24 +1,11 @@
-"""JAX/XLA runtime configuration and safety checks.
+"""JAX/XLA runtime configuration and a GPU safety check.
 
-This module centralises two concerns that turned out to matter a lot when
-moving the project from ``jax==0.9.0.1`` to ``jax>=0.10``:
+Two small helpers, both called from ``scripts/run.py``:
 
-1. **XLA GPU compilation flags.** JAX 0.10 ships a newer XLA that, by default,
-   lowers matmuls through the Triton GEMM emitter and *autotunes* every
-   ``__triton_nested_gemm_fusion`` region with a ``cuda_timer`` "delay kernel".
-   On the many *tiny* GEMMs produced by the GNN/GAT model, that autotuning is
-   both slow to compile and prone to the
-   ``cuda_timer.cc:87] Delay kernel timed out: measured time has sub-optimal
-   accuracy`` warnings, which lead to poor kernel selection. Routing GEMMs back
-   to cuBLAS (``--xla_gpu_enable_triton_gemm=false``) restores the 0.9 behaviour
-   without disabling the GPU. See :func:`configure_xla_flags`.
-
-2. **Fail loud, never fall back to CPU silently.** :func:`require_gpu` raises if
-   the GPU backend is not the one JAX picked when we expect GPU execution.
-
-IMPORTANT: :func:`configure_xla_flags` only mutates ``os.environ`` and therefore
-**must be imported and called before the first ``import jax``** anywhere in the
-process. It deliberately does not import jax itself.
+* :func:`configure_xla_flags` applies the one XLA GPU flag that this project's
+  GNN needs on jax 0.10 (see the comment on ``_SCATTER_FIX`` below). It only
+  touches ``os.environ`` and must run **before the first ``import jax``**.
+* :func:`require_gpu` refuses to run silently on CPU when GPU is expected.
 """
 
 from __future__ import annotations
@@ -26,62 +13,26 @@ from __future__ import annotations
 import os
 import warnings
 
-# Named XLA-flag profiles. IMPORTANT: none of these are applied by default.
+# MEASURED fix for the jax-0.10 "hangs forever" at 200 nodes: the GNN's
+# segment_sum / segment_softmax aggregations lower to scatter-add, and 0.10's
+# default GPU scatter lowering is ~1100x slower on the target GPU (tabriz). The
+# scatter-determinism expander rewrites it into a fast -- and deterministic --
+# sorted-segment form: model.apply @200 nodes goes 1342ms -> 5.2ms.
 #
-# We benchmarked them (see rl_blockchain.benchmark.jax_diag) and the result is
-# *hardware dependent*: on a healthy GPU the Triton GEMM emitter produces faster
-# kernels than cuBLAS, it just costs more to compile/autotune. So disabling it
-# is only worth it on GPUs where the autotuner misbehaves -- exactly the
-# "cuda_timer.cc:87 Delay kernel timed out: measured time has sub-optimal
-# accuracy" situation seen on the target server. Opt in explicitly, after
-# measuring on the target machine, via RLB_XLA_PROFILE.
-# The scatter fix. MEASURED root cause of the 200-node "hangs forever" on
-# jax 0.10: the GNN's segment_sum / segment_softmax lower to scatter-add, and
-# 0.10's DEFAULT GPU scatter lowering is pathologically slow on the target GPU.
-# Forcing the scatter-determinism expander ON rewrites it into a fast (and
-# deterministic) sorted-segment form.
-#
-# Measured on tabriz @ n_nodes=200 (model.apply forward, 1 graph):
-#     0.9.2                                        :    1.2 ms
-#     0.10.2 default / expander=false              : 1342   ms   (~1100x slower)
-#     0.10.2 --xla_gpu_enable_scatter_determinism_expander=true :  5.2 ms
-# i.e. a ~260x speedup, back to a runnable regime (still ~4x of 0.9.2; see the
-# optional code-level follow-up in model aggregation to close that gap).
-#
-# WARNING: the optimal value is GPU-DEPENDENT. On some GPUs (e.g. a laptop
-# RTX 3050) the native atomic scatter is already fast and =true is *slower*.
-# Always A/B on the target with `python -m rl_blockchain.benchmark.jax_component`.
+# NOTE: the optimal value is GPU-dependent. On GPUs whose native atomic scatter
+# is already fast, `true` can be slower -- override with RLB_XLA_FLAGS there.
 _SCATTER_FIX = "--xla_gpu_enable_scatter_determinism_expander=true"
-
-_XLA_PROFILES = {
-    # >>> The measured fix for this project's GNN on jax 0.10 on tabriz. <<<
-    "scatter-expander": _SCATTER_FIX,
-    # Opposite value: fast on GPUs whose native atomic scatter is already good.
-    "scatter-atomic": "--xla_gpu_enable_scatter_determinism_expander=false",
-    # Route GEMMs through cuBLAS instead of the Triton GEMM emitter. Measured
-    # NOT to help the 200-node slowdown (that was scatter, not GEMM). Kept for
-    # completeness / other workloads.
-    "cublas": "--xla_gpu_enable_triton_gemm=false",
-    # Keep Triton but skip autotuning (quiets the cuda_timer delay-kernel noise).
-    "no-autotune": "--xla_gpu_autotune_level=0",
-    # Scatter fix + quiet autotuning. Recommended default for large-node runs.
-    "safe": f"{_SCATTER_FIX} --xla_gpu_autotune_level=0",
-    "none": "",
-}
 
 
 def configure_xla_flags() -> str:
-    """Apply an opt-in XLA_FLAGS profile for GPU compilation. Idempotent.
+    """Prepend the project's XLA GPU fix to ``XLA_FLAGS``. Idempotent.
 
-    Must be called *before* jax is imported. By default this is a **no-op**
-    (upstream XLA behaviour) so the code-level fixes stay the primary solution.
+    Must be called before jax is imported. Anything already in ``XLA_FLAGS``
+    is preserved (a flag we would add is skipped if the user already set it).
 
-    Env controls (checked in this order):
-      * ``RLB_DISABLE_XLA_FLAGS=1`` -- do not touch XLA_FLAGS at all.
-      * ``RLB_XLA_FLAGS=<string>``  -- full override, used verbatim.
-      * ``RLB_XLA_PROFILE=<name>``  -- one of ``cublas``, ``no-autotune``,
-        ``safe``, ``none``. Recommended only after benchmarking on the target
-        GPU (``python -m rl_blockchain.benchmark.jax_diag``).
+    Env overrides:
+      * ``RLB_DISABLE_XLA_FLAGS=1`` -- leave ``XLA_FLAGS`` untouched.
+      * ``RLB_XLA_FLAGS=<string>``  -- use this instead of the default fix.
 
     Returns the resulting ``XLA_FLAGS`` string.
     """
@@ -89,21 +40,8 @@ def configure_xla_flags() -> str:
         return os.environ.get("XLA_FLAGS", "")
 
     existing = os.environ.get("XLA_FLAGS", "")
-    override = os.environ.get("RLB_XLA_FLAGS")
-    profile = os.environ.get("RLB_XLA_PROFILE")
+    extra = os.environ.get("RLB_XLA_FLAGS", _SCATTER_FIX)
 
-    if override is not None:
-        extra = override
-    elif profile:
-        if profile not in _XLA_PROFILES:
-            raise ValueError(
-                f"Unknown RLB_XLA_PROFILE={profile!r}; choose from {sorted(_XLA_PROFILES)}"
-            )
-        extra = _XLA_PROFILES[profile]
-    else:
-        extra = ""  # default: change nothing
-
-    # Only add flags the user has not already set explicitly.
     to_add = [f for f in extra.split() if f.split("=")[0] not in existing]
     merged = " ".join(filter(None, [existing, *to_add]))
     os.environ["XLA_FLAGS"] = merged
@@ -111,107 +49,21 @@ def configure_xla_flags() -> str:
 
 
 def require_gpu(expect_gpu: bool = True) -> None:
-    """Fail clearly if the active JAX backend is not what we expect.
+    """Fail clearly if JAX did not pick the GPU when GPU execution is expected.
 
-    With ``expect_gpu=True`` (the default for training/eval) this raises a
-    ``RuntimeError`` when JAX has fallen back to CPU, instead of silently
-    training ~100x slower. Set ``RLB_ALLOW_CPU=1`` to downgrade to a warning
-    (useful for laptops / CI without a GPU).
+    Raises ``RuntimeError`` instead of silently training ~100x slower on CPU.
+    Set ``RLB_ALLOW_CPU=1`` to downgrade to a warning (CPU-only dev / CI).
     """
     import jax  # local import: must happen after configure_xla_flags()
 
     backend = jax.default_backend()
-    devices = jax.devices()
-    allow_cpu = os.environ.get("RLB_ALLOW_CPU") == "1"
-
     if expect_gpu and backend != "gpu":
         msg = (
             f"Expected JAX to use the GPU but default_backend()={backend!r} "
-            f"(devices={devices}). This usually means the CUDA plugin failed to "
-            f"load. Refusing to run on CPU. Check `uv run python -c "
-            f"'import jax; print(jax.print_environment_info())'`. "
-            f"Set RLB_ALLOW_CPU=1 to override."
+            f"(devices={jax.devices()}). The CUDA plugin likely failed to load; "
+            f"refusing to run on CPU. Set RLB_ALLOW_CPU=1 to override."
         )
-        if allow_cpu:
+        if os.environ.get("RLB_ALLOW_CPU") == "1":
             warnings.warn(msg)
         else:
             raise RuntimeError(msg)
-
-    _warn_on_plugin_driver_mismatch()
-
-
-def _warn_on_plugin_driver_mismatch() -> None:
-    """Warn if the installed CUDA *plugin* major version differs from the driver.
-
-    On this project the pyproject requests ``jax[cuda13]`` but uv can resolve the
-    ``jax-cuda12-plugin`` wheels, which then run against a CUDA 13 driver. That
-    mismatch is a common source of flaky XLA autotuning on 0.10.
-    """
-    try:
-        import importlib.metadata as md
-
-        installed = {d.metadata["Name"].lower() for d in md.distributions()}
-        plugin_majors = {
-            name.split("-")[2][4:]  # jax-cuda12-plugin -> "12"
-            for name in installed
-            if name.startswith("jax-cuda") and name.endswith("-plugin")
-        }
-        if len(plugin_majors) > 1:
-            warnings.warn(f"Multiple jax-cuda*-plugin majors installed: {plugin_majors}")
-    except Exception:
-        pass
-
-
-class compile_counter:
-    """Context manager counting XLA compilations that happen inside it.
-
-    Uses jax's ``jax_log_compiles`` machinery via a lightweight monkeypatch of
-    the JIT lowering cache-miss path. Best-effort: if the internal hook is not
-    available on this jax version, ``.count`` stays at 0 and ``.available`` is
-    False.
-
-    Usage::
-
-        with compile_counter() as c:
-            f(x); g(y)
-        print(c.count)
-    """
-
-    def __init__(self):
-        self.count = 0
-        self.available = False
-        self._orig = None
-        self._mod = None
-        self._attr = None
-
-    def __enter__(self):
-        import jax
-
-        # jax exposes a cache-miss callback we can wrap. The exact location has
-        # moved across versions, so probe a couple of candidates.
-        candidates = [
-            ("jax._src.compiler", "compile_or_get_cached"),
-        ]
-        for modname, attr in candidates:
-            try:
-                mod = __import__(modname, fromlist=[attr])
-                orig = getattr(mod, attr)
-            except Exception:
-                continue
-
-            counter = self
-
-            def wrapped(*a, __orig=orig, **k):
-                counter.count += 1
-                return __orig(*a, **k)
-
-            setattr(mod, attr, wrapped)
-            self._mod, self._attr, self._orig = mod, attr, orig
-            self.available = True
-            break
-        return self
-
-    def __exit__(self, *exc):
-        if self._orig is not None:
-            setattr(self._mod, self._attr, self._orig)
-        return False
