@@ -106,7 +106,11 @@ def rollout_eval(key_input, env: environment.Environment,
         )
 
         carry = [next_obs, next_state, next_key]
-        traj = (obs, action, reward, done, infos)
+        # NOTE: do NOT emit obs/action here. eval only needs reward/done/infos;
+        # stacking the full 200-node observation graph (~39.8k edges) over every
+        # step x env is a large buffer that eval_ppo immediately discards and
+        # that can OOM at max_steps_in_episode (~1000) -> looks like a hang.
+        traj = (reward, done, infos)
         return carry, traj
 
     # Scan over episode step loop
@@ -117,9 +121,8 @@ def rollout_eval(key_input, env: environment.Environment,
         steps_in_episode
     )
 
-    # Return masked sum of rewards accumulated by agent in episode
-    observations, actions, rewards, dones, infos = trajs
-    return observations, actions, rewards, dones, infos
+    rewards, dones, infos = trajs
+    return rewards, dones, infos
 
 
 @lru_cache(maxsize=None)
@@ -580,7 +583,7 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
         subkeys_params = jax.random.split(param_key, batch_size)
 
         params_list = params_map(subkeys_params)
-        _, _, rews, dones, infos = vm_rollouts(subkeys, ppo_state, params_list)
+        rews, dones, infos = vm_rollouts(subkeys, ppo_state, params_list)
 
         all_rewards.append(rews)
         all_dones.append(dones)
