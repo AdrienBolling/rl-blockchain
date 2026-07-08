@@ -1,5 +1,11 @@
 import logging
 
+# Configure XLA flags BEFORE importing jax (no-op by default; opt in with
+# RLB_XLA_PROFILE). Must precede any `import jax`.
+from rl_blockchain.utils.jax_runtime import configure_xla_flags, require_gpu
+
+configure_xla_flags()
+
 from jax import config
 
 from rl_blockchain.scripts.parser import _parse_args
@@ -13,6 +19,10 @@ logger = logging.getLogger(__name__)
 def main():
     # Parse the arguments
     args = _parse_args()
+
+    # Fail loudly if the GPU is expected but JAX fell back to CPU.
+    # Override on a CPU-only dev machine with RLB_ALLOW_CPU=1.
+    require_gpu(expect_gpu=True)
 
     if args.jax_log_compiles:
         config.update("jax_log_compiles", True)

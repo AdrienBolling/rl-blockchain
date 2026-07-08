@@ -1,6 +1,6 @@
 import logging
 import os
-from functools import partial
+from functools import partial, lru_cache
 from pathlib import Path
 from typing import Optional, Tuple, Union, Any, Callable
 
@@ -28,6 +28,22 @@ class PPOState:
     params: dict
     opt_state: optax.OptState
     rng_key: jnp.ndarray
+
+
+@lru_cache(maxsize=None)
+def make_optimizer(lr: float) -> optax.GradientTransformation:
+    """Build an Adam optimizer, memoized on the (python float) learning rate.
+
+    ``update_ppo`` receives the optimizer as a *static* argument. A fresh
+    ``optax.adam(lr)`` object never compares equal to another -- even for an
+    identical lr (verified: ``hash(optax.adam(1e-3)) != hash(optax.adam(1e-3))``)
+    -- so constructing one per epoch forces ``update_ppo`` to recompile every
+    epoch, and under jax 0.10 each recompile re-runs the expensive Triton-GEMM
+    autotuner. Memoizing on the lr value makes a constant schedule reuse a single
+    stable object, so ``update_ppo`` compiles once. A changing lr still yields a
+    new (but cached) object per distinct value.
+    """
+    return optax.adam(lr)
 
 
 @partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode'))
@@ -104,6 +120,32 @@ def rollout_eval(key_input, env: environment.Environment,
     # Return masked sum of rewards accumulated by agent in episode
     observations, actions, rewards, dones, infos = trajs
     return observations, actions, rewards, dones, infos
+
+
+@lru_cache(maxsize=None)
+def _vectorized_rollout(env, model, steps_in_episode: int):
+    """Build (once) a jitted, vmapped training rollout.
+
+    ``ppo_state`` is a *traced* argument (in_axes=None) so the network weights
+    are never baked in as constants. Cached on (env, model, steps) so the same
+    compiled executable is reused across all epochs -> one compilation total
+    instead of one per epoch.
+    """
+
+    def single(rng, ppo_state, new_param):
+        return rollout(rng, env, model, ppo_state, new_param, steps_in_episode)
+
+    return jax.jit(jax.vmap(single, in_axes=(0, None, 0)))
+
+
+@lru_cache(maxsize=None)
+def _vectorized_rollout_eval(env, model, steps_in_episode: int):
+    """Same as :func:`_vectorized_rollout` for the deterministic eval rollout."""
+
+    def single(rng, ppo_state, new_param):
+        return rollout_eval(rng, env, model, ppo_state, new_param, steps_in_episode)
+
+    return jax.jit(jax.vmap(single, in_axes=(0, None, 0)))
 
 
 @jax.jit
@@ -278,19 +320,9 @@ def train_ppo(
 
     num_steps = ((num_steps + batch_size - 1) // batch_size) * batch_size
 
-    # rollout fns expect graph inputs inside rollout
-    @jax.jit
-    def single_rollout(rng: jax.Array, new_param: EnvParams):
-        return rollout(
-            rng,
-            env,
-            model,
-            ppo_state,
-            new_param,
-            num_steps,
-        )
-
-    vm_rollout = jax.vmap(single_rollout)
+    # rollout fns expect graph inputs inside rollout. ppo_state is threaded as a
+    # traced argument (see _vectorized_rollout) to avoid per-epoch recompilation.
+    vm_rollout = _vectorized_rollout(env, model, num_steps)
 
     params_map = jax.vmap(
         lambda key_map: create_params_fn(key_map)  # Create new params for each env,
@@ -303,7 +335,8 @@ def train_ppo(
 
         params_list = params_map(subkeys_params)
 
-        observations, perms, logps, rews, dones, vals, last_values, infos = vm_rollout(subkeys, params_list)
+        observations, perms, logps, rews, dones, vals, last_values, infos = vm_rollout(
+            subkeys, ppo_state, params_list)
         # refined_value = compute_avg_value(infos)
 
         # Extract graphs and last graphs
@@ -405,19 +438,12 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     Returns the updated PPOState.
     """
 
-    # Vectorized rollout
-    @jax.jit
-    def single_rollout(rng: jax.Array, new_param: EnvParams):
-        return rollout(
-            rng,
-            env,
-            model,
-            ppo_state,
-            new_param,
-            num_steps
-        )
-
-    vm_rollout = jax.vmap(single_rollout)
+    # Vectorized rollout.
+    # NOTE: ``ppo_state`` is threaded as a *traced argument* (in_axes=None),
+    # not captured by closure. Capturing it would bake the current network
+    # weights in as compile-time constants, forcing a full recompilation (and,
+    # under jax 0.10, a fresh Triton-GEMM autotuning pass) on *every* epoch.
+    vm_rollout = _vectorized_rollout(env, model, num_steps)
 
     params_map = jax.vmap(create_params_fn)
 
@@ -428,8 +454,8 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     subkeys_params = jax.random.split(params_key, num_envs)
 
     params_list = params_map(subkeys_params)
-    # print("ppo_state id:", id(ppo_state))  # ← ICI
-    observations, perms, logps, rews, dones, vals, last_values, infos_env = vm_rollout(subkeys, params_list)
+    observations, perms, logps, rews, dones, vals, last_values, infos_env = vm_rollout(
+        subkeys, ppo_state, params_list)
     logger.info(f"Epoch {epoch}: Collected {num_steps * num_envs} steps.")
 
     if log_fn is not None:
@@ -537,12 +563,7 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
              log_fn: LOG_TYPE = None) -> dict[str, jax.Array]:
     steps_in_episode = int(env.default_params.max_steps_in_episode)
 
-    @jax.jit
-    def single_rollout_eval(rng: jax.Array, new_param: EnvParams):
-        return rollout_eval(rng, env, model, ppo_state, new_param,
-                            steps_in_episode)
-
-    vm_rollouts = jax.vmap(single_rollout_eval)
+    vm_rollouts = _vectorized_rollout_eval(env, model, steps_in_episode)
     params_map = jax.vmap(create_params_fn)
 
     all_rewards = []
@@ -559,7 +580,7 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
         subkeys_params = jax.random.split(param_key, batch_size)
 
         params_list = params_map(subkeys_params)
-        _, _, rews, dones, infos = vm_rollouts(subkeys, params_list)
+        _, _, rews, dones, infos = vm_rollouts(subkeys, ppo_state, params_list)
 
         all_rewards.append(rews)
         all_dones.append(dones)
@@ -591,7 +612,7 @@ def create_ppo_state(resume_dir: Optional[Path], env: environment.Environment, s
     is True, reinitializes optimizer states with loaded network weights.
     Otherwise, does a fresh init.
     """
-    model_opt = optax.adam(lr)
+    model_opt = make_optimizer(float(lr))
     key = jax.random.PRNGKey(seed)
 
     # --- restore path ---

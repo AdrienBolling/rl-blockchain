@@ -14,7 +14,8 @@ from tqdm import tqdm
 
 from rl_blockchain.BlockEnv import BlockchainEnv
 from rl_blockchain.BlockEnv.NormailzationWrapper import NormalizationWrapper
-from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch, load_ppo_state
+from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch, load_ppo_state, \
+    make_optimizer
 from rl_blockchain.algo.ppo import eval_ppo
 from rl_blockchain.scripts.env_factory import GenericEnvFactory, LOG_TYPE
 
@@ -101,7 +102,9 @@ def train_ppo(ARGS: Namespace):
 
     # Train the PPO agent
     for epoch in tqdm(range(num_epochs)):
-        model_opt = optax.adam(lr_fn(epoch))
+        # Memoized on the float lr so a constant schedule reuses one stable
+        # optimizer object -> update_ppo compiles once instead of every epoch.
+        model_opt = make_optimizer(float(lr_fn(epoch)))
         # Train for one epoch
         logger.info(f"Epoch {epoch + 1}/{num_epochs}")
         ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env_train,
