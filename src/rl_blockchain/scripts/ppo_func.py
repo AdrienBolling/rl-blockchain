@@ -6,7 +6,6 @@ from typing import Callable, Tuple
 import flax
 import jax
 import jax.numpy as jnp
-import optax
 import orbax.checkpoint as ocp
 import wandb
 from gymnax.environments.environment import TEnvParams, Environment
@@ -128,6 +127,7 @@ def train_ppo(ARGS: Namespace):
                 create_params_fn=create_params_fn,
                 num_episodes=ARGS.eval_episodes,
                 recorded_episodes=5,
+                batch_size=min(num_envs, ARGS.eval_episodes),
                 log_fn=log_fn
             )
 

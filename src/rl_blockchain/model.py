@@ -2,7 +2,7 @@ import distrax
 import jraph as jr
 from flax import linen as nn
 from jax import numpy as jnp
-from jraph._src.utils import segment_sum
+from rl_blockchain.fast_agg import fast_segment_sum, OptGraphNetGAT
 
 
 def default_mlp_init(scale=0.05):
@@ -134,7 +134,7 @@ class PPOBackbone(nn.Module):
             embed_global_fn=make_update_fn(self.backbone_gat_dim, pre_norm=False, last_activation=False),
         )
 
-        back_gat_1 = jr.GraphNetGAT(
+        back_gat_1 = OptGraphNetGAT(
             update_edge_fn=make_update_fn(
                 [self.backbone_gat_dim, self.backbone_gat_dim * 2, self.backbone_gat_dim * 2, self.backbone_gat_dim]),
             update_node_fn=make_update_fn(
@@ -144,12 +144,9 @@ class PPOBackbone(nn.Module):
             attention_logit_fn=make_update_fn(
                 [self.backbone_gat_dim, self.backbone_gat_dim * 2, self.backbone_gat_dim * 2, self.backbone_gat_dim, 1],
                 last_activation=False),
-            attention_reduce_fn=attention_reduce_fn,
-            aggregate_edges_for_nodes_fn=segment_sum,
-            aggregate_nodes_for_globals_fn=segment_sum,
-            aggregate_edges_for_globals_fn=segment_sum)
+            attention_reduce_fn=attention_reduce_fn)
 
-        back_gat_2 = jr.GraphNetGAT(
+        back_gat_2 = OptGraphNetGAT(
             update_edge_fn=make_update_fn(
                 [self.backbone_gat_dim, self.backbone_gat_dim * 2, self.backbone_gat_dim * 2, self.backbone_gat_dim]),
             update_node_fn=make_update_fn(
@@ -159,10 +156,7 @@ class PPOBackbone(nn.Module):
             attention_logit_fn=make_update_fn(
                 [self.backbone_gat_dim, self.backbone_gat_dim * 2, self.backbone_gat_dim * 2, self.backbone_gat_dim, 1],
                 last_activation=False),
-            attention_reduce_fn=attention_reduce_fn,
-            aggregate_edges_for_nodes_fn=segment_sum,
-            aggregate_nodes_for_globals_fn=segment_sum,
-            aggregate_edges_for_globals_fn=segment_sum)
+            attention_reduce_fn=attention_reduce_fn)
 
         gp = projector(graph)
         g1 = back_gat_1(gp)
@@ -191,7 +185,7 @@ class PPOActorHead(nn.Module):
             update_node_fn=make_update_fn(
                 [self.actor_gcn_dim, self.actor_gcn_dim * 2, self.actor_gcn_dim, 1], last_activation=False),
             update_global_fn=None,
-            aggregate_edges_for_nodes_fn=segment_sum)(shared_graph)
+            aggregate_edges_for_nodes_fn=fast_segment_sum)(shared_graph)
 
         return distrax.Categorical(logits=graph_pi.nodes.squeeze())
 
@@ -205,8 +199,8 @@ class PPOCriticHead(nn.Module):
             update_edge_fn=make_update_fn([self.critic_gnn_dim, self.critic_gnn_dim]),
             update_node_fn=make_update_fn([self.critic_gnn_dim, self.critic_gnn_dim]),
             update_global_fn=make_update_fn([self.critic_gnn_dim * 2, self.critic_gnn_dim, 1], last_activation=False),
-            aggregate_edges_for_nodes_fn=segment_sum,
-            aggregate_nodes_for_globals_fn=segment_sum,
+            aggregate_edges_for_nodes_fn=fast_segment_sum,
+            aggregate_nodes_for_globals_fn=fast_segment_sum,
         )(shared_graph)
         return crit.globals.squeeze()
 
