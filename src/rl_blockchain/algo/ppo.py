@@ -450,7 +450,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
                 batch_size: int,
                 model_opt: GradientTransformationExtraArgs, gamma: float, lambda_: float,
                 clip_ratio: float, log_fn: LOG_TYPE = None,
-                sub_epoch: int = 0, value_coef: jax.Array = jnp.float32(0.5),
+                env_step: int = 0, value_coef: jax.Array = jnp.float32(0.5),
                 entropy_coef: jax.Array = jnp.float32(0.01),
                 norm_advantage: bool = False,
                 micro_batch_size: Optional[int] = None) -> Tuple[PPOState, int]:
@@ -481,7 +481,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
 
     if log_fn is not None:
         infos_env_refined = log_fn(infos_env, rews, dones)
-        wandb.log({"env": infos_env_refined}, step=sub_epoch)
+        wandb.log({"env": infos_env_refined}, step=env_step)
 
     # Compute advantages and returns
     advantages = jax.vmap(
@@ -543,14 +543,14 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
             "clip_fract": clip_fract,
         }
         if log_fn is not None:
-            wandb.log({"coef": info_coef, "train": info_train, "epoch": epoch}, step=sub_epoch)
-        sub_epoch += 1
+            wandb.log({"coef": info_coef, "train": info_train, "epoch": epoch}, step=env_step)
+        env_step += batch_size
         logger.info(f"Epoch {epoch}/batch {start} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
 
     # Update RNG and log progress
     ppo_state = ppo_state.replace(rng_key=new_ppo_key)
 
-    return ppo_state, sub_epoch
+    return ppo_state, env_step
 
 
 def create_checkpoint_manager(

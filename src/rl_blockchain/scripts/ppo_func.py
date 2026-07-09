@@ -62,7 +62,7 @@ def train_ppo(ARGS: Namespace):
     key, key_param = jax.random.split(key)
     # Create environment parameters
 
-    sub_epoch = 0
+    env_step = 0
     # TODO
 
     model, env, create_params_fn, log_fn = get_env_config(ARGS, key_param)
@@ -106,13 +106,13 @@ def train_ppo(ARGS: Namespace):
         model_opt = make_optimizer(float(lr_fn(epoch)))
         # Train for one epoch
         logger.info(f"Epoch {epoch + 1}/{num_epochs}")
-        ppo_state, sub_epoch = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env_train,
+        ppo_state, env_step = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env_train,
                                            model=model, num_steps=num_steps,
                                            num_envs=num_envs, create_params_fn=create_params_fn,
                                            batch_size=batch_size, model_opt=model_opt, gamma=gamma,
                                            lambda_=lambda_,
                                            clip_ratio=clip_ratio_fn(epoch), log_fn=log_fn,
-                                           sub_epoch=sub_epoch, value_coef=value_coef,
+                                           env_step=env_step, value_coef=value_coef,
                                            entropy_coef=entropy_coef_fn(epoch),
                                            norm_advantage=norm_advantages,
                                            micro_batch_size=getattr(ARGS, "micro_batch_size", None))
@@ -132,7 +132,7 @@ def train_ppo(ARGS: Namespace):
                 log_fn=log_fn
             )
 
-            wandb.log({"eval": metrics}, step=sub_epoch)
+            wandb.log({"eval": metrics}, step=env_step)
             logger.info(metrics)
 
         # Save the checkpoint
