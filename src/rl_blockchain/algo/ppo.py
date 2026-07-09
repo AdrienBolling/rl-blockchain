@@ -170,7 +170,7 @@ def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
     return advs[::-1]
 
 
-@partial(jax.jit, static_argnames=('model_apply', 'model_optimizer', 'clip_ratio'))
+@partial(jax.jit, static_argnames=('model_apply', 'model_optimizer', 'clip_ratio', 'micro_batch_size'))
 def update_ppo(
         ppo_state: PPOState,
         observation: jr.GraphsTuple,
@@ -184,6 +184,7 @@ def update_ppo(
         clip_ratio: float = 0.2,
         value_coef: jax.Array = jnp.float32(0.5),
         entropy_coef: jax.Array = jnp.float32(0.01),
+        micro_batch_size: Optional[int] = None,
 ) -> tuple[PPOState, float, float, float, float, float, dict[str, Any]]:
     """
     Performs a PPO update over a batch of transitions.
@@ -215,62 +216,76 @@ def update_ppo(
         "entropy_coef": entropy_coef,
     }
 
-    # Loss function with aux outputs
-    def loss_fn(model_params):
-        # compute per-sample losses
-        def sample_loss(m_params, graph, perm, old_lp, ret, adv, old_val):
-            value_pred, dist = model_apply(m_params, graph)
-            nb_validators = graph.globals[0]
-            new_lp = logp_prefix_pl(dist.logits, perm, nb_validators)
-            log_ratio = new_lp - old_lp
-            # log_ratio = jnp.clip(log_ratio, -20.0, 20.0)
-            ratio = jnp.exp(log_ratio)
+    # Per-sample PPO loss.
+    def sample_loss(m_params, graph, perm, old_lp, ret, adv, old_val):
+        value_pred, dist = model_apply(m_params, graph)
+        nb_validators = graph.globals[0]
+        new_lp = logp_prefix_pl(dist.logits, perm, nb_validators)
+        log_ratio = new_lp - old_lp
+        ratio = jnp.exp(log_ratio)
 
-            clipp_actor = jnp.clip(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
-            policy_loss = -jnp.minimum(ratio * adv, clipp_actor * adv)
-            entropy = dist.entropy()  # TODO
+        clipp_actor = jnp.clip(ratio, 1.0 - clip_ratio, 1.0 + clip_ratio)
+        policy_loss = -jnp.minimum(ratio * adv, clipp_actor * adv)
+        entropy = dist.entropy()  # TODO
 
-            value_pred_clipped = old_val + (value_pred - old_val).clip(
-                -clip_ratio, clip_ratio)
-            value_loss = jnp.square(value_pred - ret)
-            value_loss_clipped = jnp.square(value_pred_clipped - ret)
-            value_loss = jnp.maximum(value_loss, value_loss_clipped)
+        value_pred_clipped = old_val + (value_pred - old_val).clip(
+            -clip_ratio, clip_ratio)
+        value_loss = jnp.square(value_pred - ret)
+        value_loss_clipped = jnp.square(value_pred_clipped - ret)
+        value_loss = jnp.maximum(value_loss, value_loss_clipped)
 
-            total_loss = policy_loss + value_coef * value_loss - entropy * entropy_coef
+        total_loss = policy_loss + value_coef * value_loss - entropy * entropy_coef
 
-            approx_kl = ratio - 1.0 - log_ratio
-            is_clipped = (jnp.abs(ratio - 1.0) > clip_ratio).astype(jnp.float32)
-            return total_loss, (policy_loss, value_loss, entropy, approx_kl, is_clipped)
+        approx_kl = ratio - 1.0 - log_ratio
+        is_clipped = (jnp.abs(ratio - 1.0) > clip_ratio).astype(jnp.float32)
+        return total_loss, (policy_loss, value_loss, entropy, approx_kl, is_clipped)
 
-        # Vectorize over batch
-        total_loss, (pl_batch, vl_batch, ent_batch, kl_batch, cf_batch) = jax.vmap(
+    # Mean loss + stacked aux metrics [pl, vl, ent, kl, cf] over a set of samples.
+    def batch_loss(model_params, graphs, perms_, lp_, ret_, adv_, val_):
+        total_loss, aux = jax.vmap(
             sample_loss,
             in_axes=(None, 0, 0, 0, 0, 0, 0),
-            out_axes=(0, (0, 0, 0, 0, 0))
-        )(
-            model_params,
-            observation,
-            perms,
-            old_logps,
-            returns,
-            advantages,
-            old_values
-        )
+            out_axes=(0, (0, 0, 0, 0, 0)),
+        )(model_params, graphs, perms_, lp_, ret_, adv_, val_)
+        aux5 = jnp.stack([jnp.mean(a) for a in aux])
+        return jnp.mean(total_loss), aux5
 
-        # total_loss is array of shape [B], pl_batch/ vl_batch each shape [B]
-        mean_loss = jnp.mean(total_loss)
-        mean_pl_batch = jnp.mean(pl_batch)
-        mean_vl_batch = jnp.mean(vl_batch)
-        mean_ent_batch = jnp.mean(ent_batch)
-        mean_kl_batch = jnp.mean(kl_batch)
-        mean_cf_batch = jnp.mean(cf_batch)
-        # return mean total_loss as loss, and policy/value losses as aux
-        return mean_loss, (mean_pl_batch, mean_vl_batch, mean_ent_batch, mean_kl_batch, mean_cf_batch)
+    grad_fn = jax.value_and_grad(batch_loss, has_aux=True)
 
-    # Compute gradients
-    (loss_val, (mean_pl, mean_vl, mean_ent, mean_kl, mean_cf)), grads = jax.value_and_grad(
-        loss_fn, has_aux=True
-    )(ppo_state.params)
+    batch = perms.shape[0]
+    full_inputs = (observation, perms, old_logps, returns, advantages, old_values)
+
+    if micro_batch_size is None or micro_batch_size >= batch:
+        # Single pass over the whole batch (default behaviour).
+        (_, aux5), grads = grad_fn(ppo_state.params, *full_inputs)
+    else:
+        # Gradient accumulation: split the batch into micro-batches and sum their
+        # gradients one at a time (lax.scan keeps only one micro-batch's
+        # activations live), then average. Mathematically identical to the
+        # full-batch gradient; peak activation VRAM scales with micro_batch_size
+        # instead of batch. Exact here because there is no cross-sample coupling
+        # (advantage normalization happens upstream; the model uses LayerNorm).
+        assert batch % micro_batch_size == 0, (
+            f"batch_size ({batch}) must be divisible by "
+            f"micro_batch_size ({micro_batch_size})")
+        n_micro = batch // micro_batch_size
+
+        def _to_micro(x):
+            return x.reshape((n_micro, micro_batch_size) + x.shape[1:])
+
+        micro_inputs = jax.tree.map(_to_micro, full_inputs)
+
+        def _accumulate(carry, micro):
+            grad_acc, aux_acc = carry
+            (_, aux5_m), g = grad_fn(ppo_state.params, *micro)
+            return (jax.tree.map(jnp.add, grad_acc, g), aux_acc + aux5_m), None
+
+        init = (jax.tree.map(jnp.zeros_like, ppo_state.params), jnp.zeros(5))
+        (grad_sum, aux_sum), _ = jax.lax.scan(_accumulate, init, micro_inputs)
+        grads = jax.tree.map(lambda x: x / n_micro, grad_sum)
+        aux5 = aux_sum / n_micro
+
+    mean_pl, mean_vl, mean_ent, mean_kl, mean_cf = aux5
 
     model_updates, new_model_opt_state = model_optimizer.update(
         grads, ppo_state.opt_state
@@ -423,10 +438,12 @@ def eval_ppo_and_log(env: BlockchainEnv, model: nn.module, ppo_state: PPOState, 
     avg = sum(returns) / len(returns)
     print(f"Eval over {num_episodes} eps: avg return={avg:.3f}")
 
-def index_graph(x, idx, num_steps:int):
+
+def index_graph(x, idx, num_steps: int):
     env_idx = idx // num_steps
     step_idx = idx % num_steps
     return x[env_idx, step_idx]
+
 
 def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, model: nn.Module, num_steps: int,
                 num_envs: int, create_params_fn: Callable[[jax.Array], TEnvParams],
@@ -435,7 +452,8 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
                 clip_ratio: float, log_fn: LOG_TYPE = None,
                 sub_epoch: int = 0, value_coef: jax.Array = jnp.float32(0.5),
                 entropy_coef: jax.Array = jnp.float32(0.01),
-                norm_advantage: bool = False) -> Tuple[PPOState, int]:
+                norm_advantage: bool = False,
+                micro_batch_size: Optional[int] = None) -> Tuple[PPOState, int]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
@@ -515,6 +533,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
             clip_ratio,
             value_coef,
             entropy_coef,
+            micro_batch_size,
         )
         info_train = {
             "policy_loss": policy_loss,

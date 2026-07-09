@@ -66,13 +66,17 @@ def main() -> None:
                    help="episode length for the eval stage (default: env max_steps)")
     p.add_argument("--eval-envs", type=int, default=None,
                    help="parallel envs for the eval stage (default: num-envs)")
+    p.add_argument("--micro-batch-size", type=int, default=None,
+                   help="gradient-accumulation micro-batch for the update stage "
+                        "(must divide --batch-size); reduces update peak VRAM")
     args = p.parse_args()
 
     print("=" * 68)
     print(f"jax {jax.__version__}  backend {jax.default_backend()}  devices {jax.devices()}")
     print(f"XLA_FLAGS: {_XLA or '(none)'}")
     print(f"n_nodes={args.n_nodes} gat_arch={args.gat_arch} num_steps={args.num_steps} "
-          f"num_envs={args.num_envs} batch_size={args.batch_size}")
+          f"num_envs={args.num_envs} batch_size={args.batch_size} "
+          f"micro_batch_size={args.micro_batch_size}")
     print(f"edges/graph = {args.n_nodes * (args.n_nodes - 1)}   ({_mem()})")
     print("=" * 68)
 
@@ -128,13 +132,15 @@ def main() -> None:
     def do_update():
         return update_ppo(ppo_state, batch_graphs, flat_perms[idx], flat_lp[idx],
                           flat_r[idx], flat_adv[idx], flat_val[idx],
-                          model.apply, model_opt, 0.2)
+                          model.apply, model_opt, 0.2,
+                          micro_batch_size=args.micro_batch_size)
 
-    # -------- update (dominant VRAM stage; peak scales with batch_size) --------
-    with stage("update_ppo COMPILE + run"):
+    # -------- update (dominant VRAM stage; micro-batching lowers its peak) --------
+    mb = args.micro_batch_size
+    with stage(f"update_ppo COMPILE + run (micro_batch_size={mb})"):
         jax.block_until_ready(do_update()[0].params)
     for i in range(3):
-        with stage(f">>> update_ppo EXEC only, call {i + 1}/3 <<<"):
+        with stage(f">>> update_ppo EXEC only, call {i + 1}/3 (micro={mb}) <<<"):
             jax.block_until_ready(do_update()[0].params)
 
     # -------- eval --------

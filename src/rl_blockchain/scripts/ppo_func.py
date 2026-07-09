@@ -114,7 +114,8 @@ def train_ppo(ARGS: Namespace):
                                            clip_ratio=clip_ratio_fn(epoch), log_fn=log_fn,
                                            sub_epoch=sub_epoch, value_coef=value_coef,
                                            entropy_coef=entropy_coef_fn(epoch),
-                                           norm_advantage=norm_advantages)
+                                           norm_advantage=norm_advantages,
+                                           micro_batch_size=getattr(ARGS, "micro_batch_size", None))
         key, _ = jax.random.split(key)
         if epoch % ARGS.eval_interval == 0:
             logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")

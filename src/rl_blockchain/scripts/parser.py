@@ -320,6 +320,16 @@ def _parse_args() -> Namespace:
         help="If True, normalize the rewards during training. Default is False.",
     )
 
+    train_parser.add_argument(
+        "--micro-batch-size",
+        type=int,
+        default=None,
+        help="If set, split each PPO minibatch into micro-batches of this size and "
+             "accumulate gradients (lax.scan) to cut peak VRAM. Must divide "
+             "--batch-size. Result is identical to a full-batch update. Default: "
+             "None (no accumulation).",
+    )
+
     eval_parser = mode_subparsers.add_parser("eval", help="Eval the PPO agent.")
 
     eval_parser.add_argument(
