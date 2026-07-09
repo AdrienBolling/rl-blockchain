@@ -170,7 +170,7 @@ def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
     return advs[::-1]
 
 
-@partial(jax.jit, static_argnames=('model_apply', 'model_optimizer', 'clip_ratio'))
+@partial(jax.jit, static_argnames=('model_apply', 'model_optimizer', 'clip_ratio', 'use_remat'))
 def update_ppo(
         ppo_state: PPOState,
         observation: jr.GraphsTuple,
@@ -183,7 +183,8 @@ def update_ppo(
         model_optimizer,
         clip_ratio: float = 0.2,
         value_coef: jax.Array = jnp.float32(0.5),
-        entropy_coef: jax.Array = jnp.float32(0.01)
+        entropy_coef: jax.Array = jnp.float32(0.01),
+        use_remat: bool = True,
 ) -> tuple[PPOState, float, float, float, float, float, dict[str, Any]]:
     """
     Performs a PPO update over a batch of transitions.
@@ -215,11 +216,18 @@ def update_ppo(
         "entropy_coef": entropy_coef,
     }
 
+    # Gradient checkpointing (remat): recompute the GNN forward during the
+    # backward pass instead of storing all its activations. Cuts the per-sample
+    # activation memory that scales with batch size (the term that forces a
+    # smaller batch), at the cost of ~one extra forward. Cheap now that the
+    # forward is scatter-free. Same math -> identical results.
+    forward = jax.checkpoint(model_apply) if use_remat else model_apply
+
     # Loss function with aux outputs
     def loss_fn(model_params):
         # compute per-sample losses
         def sample_loss(m_params, graph, perm, old_lp, ret, adv, old_val):
-            value_pred, dist = model_apply(m_params, graph)
+            value_pred, dist = forward(m_params, graph)
             nb_validators = graph.globals[0]
             new_lp = logp_prefix_pl(dist.logits, perm, nb_validators)
             log_ratio = new_lp - old_lp
@@ -435,7 +443,7 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
                 clip_ratio: float, log_fn: LOG_TYPE = None,
                 sub_epoch: int = 0, value_coef: jax.Array = jnp.float32(0.5),
                 entropy_coef: jax.Array = jnp.float32(0.01),
-                norm_advantage: bool = False) -> Tuple[PPOState, int]:
+                norm_advantage: bool = False, use_remat: bool = True) -> Tuple[PPOState, int]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
@@ -514,7 +522,8 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
             model_opt,
             clip_ratio,
             value_coef,
-            entropy_coef
+            entropy_coef,
+            use_remat,
         )
         info_train = {
             "policy_loss": policy_loss,
