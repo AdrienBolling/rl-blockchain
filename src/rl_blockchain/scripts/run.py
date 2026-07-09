@@ -1,10 +1,11 @@
 import logging
 
-# Configure XLA flags BEFORE importing jax (no-op by default; opt in with
-# RLB_XLA_PROFILE). Must precede any `import jax`.
-from rl_blockchain.utils.jax_runtime import configure_xla_flags, require_gpu
+# Configure XLA flags + the persistent compilation cache BEFORE importing jax.
+# Must precede any `import jax`.
+from rl_blockchain.utils.jax_runtime import configure_xla_flags, configure_compilation_cache, require_gpu
 
 configure_xla_flags()
+configure_compilation_cache()
 
 from jax import config
 

@@ -1,10 +1,12 @@
 """JAX/XLA runtime configuration and a GPU safety check.
 
-Two small helpers, both called from ``scripts/run.py``:
+Helpers called from ``scripts/run.py``:
 
 * :func:`configure_xla_flags` applies the one XLA GPU flag that this project's
   GNN needs on jax 0.10 (see the comment on ``_SCATTER_FIX`` below). It only
   touches ``os.environ`` and must run **before the first ``import jax``**.
+* :func:`configure_compilation_cache` enables JAX's persistent on-disk
+  compilation cache so repeated runs skip the ~60-90s compile.
 * :func:`require_gpu` refuses to run silently on CPU when GPU is expected.
 """
 
@@ -46,6 +48,37 @@ def configure_xla_flags() -> str:
     merged = " ".join(filter(None, [existing, *to_add]))
     os.environ["XLA_FLAGS"] = merged
     return merged
+
+
+def configure_compilation_cache() -> str | None:
+    """Enable JAX's persistent on-disk compilation cache. Idempotent.
+
+    Compiling this project is slow (~60-90s: model.init + rollout + update + eval),
+    but execution is tiny. The cache stores compiled XLA executables keyed by the
+    computation + jaxlib version + XLA flags + accelerator, so every run after the
+    first (or after an HPC job restart) reuses them and skips (re)compilation.
+
+    Must run **before jax is imported** (it sets env vars jax reads at startup).
+
+    Env controls:
+      * ``RLB_DISABLE_JAX_CACHE=1`` -- disable the cache.
+      * ``RLB_JAX_CACHE_DIR=<dir>`` / ``JAX_COMPILATION_CACHE_DIR=<dir>`` --
+        override the location (default ``~/.cache/rl_blockchain/jax``).
+
+    Returns the cache directory, or ``None`` if disabled.
+    """
+    if os.environ.get("RLB_DISABLE_JAX_CACHE") == "1":
+        return None
+
+    cache_dir = (os.environ.get("JAX_COMPILATION_CACHE_DIR")
+                 or os.environ.get("RLB_JAX_CACHE_DIR")
+                 or os.path.expanduser("~/.cache/rl_blockchain/jax"))
+    os.makedirs(cache_dir, exist_ok=True)
+    os.environ["JAX_COMPILATION_CACHE_DIR"] = cache_dir
+    # Cache every executable (default skips small ones) that took >=1s to compile.
+    os.environ.setdefault("JAX_PERSISTENT_CACHE_MIN_ENTRY_SIZE_BYTES", "-1")
+    os.environ.setdefault("JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS", "1.0")
+    return cache_dir
 
 
 def require_gpu(expect_gpu: bool = True) -> None:
