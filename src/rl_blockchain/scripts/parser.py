@@ -320,16 +320,6 @@ def _parse_args() -> Namespace:
         help="If True, normalize the rewards during training. Default is False.",
     )
 
-    train_parser.add_argument(
-        "--no-remat",
-        dest="remat",
-        action="store_false",
-        default=True,
-        help="Disable gradient checkpointing (remat) in the PPO update. Remat is "
-             "ON by default: it recomputes the GNN forward in the backward pass "
-             "to cut activation memory (larger batch size) for ~one extra forward.",
-    )
-
     eval_parser = mode_subparsers.add_parser("eval", help="Eval the PPO agent.")
 
     eval_parser.add_argument(

@@ -2,17 +2,18 @@
 
 Builds the real env + GNN and runs rollout, GAE, PPO update, and evaluation,
 timing and isolating each stage while reporting GPU memory. Separates compile
-time (first call) from run time (subsequent calls), and shows the effect of
-gradient checkpointing (remat) on the update's peak VRAM.
+time (first call) from run time (subsequent calls). The update stage is the
+dominant VRAM consumer and its peak scales ~linearly with batch size.
 
 Examples::
 
-    # full run at 200 nodes, remat on (default):
+    # full run at 200 nodes:
     uv run --no-sync python -m rl_blockchain.benchmark.jax_repro --n-nodes 200
 
-    # compare update memory with/without remat (run both, compare peak):
-    uv run --no-sync python -m rl_blockchain.benchmark.jax_repro --n-nodes 200 --batch-size 16
-    uv run --no-sync python -m rl_blockchain.benchmark.jax_repro --n-nodes 200 --batch-size 16 --no-remat
+    # sweep batch size to see how the update's peak VRAM scales:
+    for b in 16 32 64; do
+      uv run --no-sync python -m rl_blockchain.benchmark.jax_repro --n-nodes 200 --batch-size $b
+    done
 """
 
 from __future__ import annotations
@@ -65,15 +66,13 @@ def main() -> None:
                    help="episode length for the eval stage (default: env max_steps)")
     p.add_argument("--eval-envs", type=int, default=None,
                    help="parallel envs for the eval stage (default: num-envs)")
-    p.add_argument("--no-remat", dest="remat", action="store_false", default=True,
-                   help="disable gradient checkpointing in the update stage")
     args = p.parse_args()
 
     print("=" * 68)
     print(f"jax {jax.__version__}  backend {jax.default_backend()}  devices {jax.devices()}")
     print(f"XLA_FLAGS: {_XLA or '(none)'}")
     print(f"n_nodes={args.n_nodes} gat_arch={args.gat_arch} num_steps={args.num_steps} "
-          f"num_envs={args.num_envs} batch_size={args.batch_size} remat={args.remat}")
+          f"num_envs={args.num_envs} batch_size={args.batch_size}")
     print(f"edges/graph = {args.n_nodes * (args.n_nodes - 1)}   ({_mem()})")
     print("=" * 68)
 
@@ -129,13 +128,13 @@ def main() -> None:
     def do_update():
         return update_ppo(ppo_state, batch_graphs, flat_perms[idx], flat_lp[idx],
                           flat_r[idx], flat_adv[idx], flat_val[idx],
-                          model.apply, model_opt, 0.2, use_remat=args.remat)
+                          model.apply, model_opt, 0.2)
 
-    # -------- update (this is what remat targets) --------
-    with stage(f"update_ppo COMPILE + run (remat={args.remat})"):
+    # -------- update (dominant VRAM stage; peak scales with batch_size) --------
+    with stage("update_ppo COMPILE + run"):
         jax.block_until_ready(do_update()[0].params)
     for i in range(3):
-        with stage(f">>> update_ppo EXEC only, call {i + 1}/3 (remat={args.remat}) <<<"):
+        with stage(f">>> update_ppo EXEC only, call {i + 1}/3 <<<"):
             jax.block_until_ready(do_update()[0].params)
 
     # -------- eval --------
@@ -150,7 +149,7 @@ def main() -> None:
         jax.block_until_ready(vm_eval(ek, ppo_state, ep))
 
     print("=" * 68)
-    print(f"ALL STAGES OK at n_nodes={args.n_nodes}, remat={args.remat}.  {_mem()}")
+    print(f"ALL STAGES OK at n_nodes={args.n_nodes}.  {_mem()}")
     print("=" * 68)
 
 
