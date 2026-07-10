@@ -2,7 +2,7 @@ import jax
 import jax.numpy as jnp
 
 from rl_blockchain.BlockEnv.BlockEnv import uniform_k_true_mask
-from rl_blockchain.BlockEnv.BlockchainGraph import STATIC_MASKS_DICT
+from rl_blockchain.BlockEnv.BlockchainGraph import get_non_diag_indices
 from rl_blockchain.BlockEnv.state_params import (
     EnvParams,
     Speeders,
@@ -17,7 +17,7 @@ from rl_blockchain.scripts.parser import REF_FILENAME
 
 def _build_test_env(seed: int = 0, nb_nodes: int = 7, nb_validators: int = 4, max_steps: int = 5):
     key = jax.random.PRNGKey(seed)
-    non_diag_mask = STATIC_MASKS_DICT[nb_nodes]
+    non_diag_mask = get_non_diag_indices(nb_nodes)
     speeder = Speeders.create(nb_nodes)
 
     adj_matrix = create_rd_adj_matrix(nb_nodes, key)

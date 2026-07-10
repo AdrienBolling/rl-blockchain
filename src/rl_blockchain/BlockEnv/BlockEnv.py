@@ -9,7 +9,7 @@ from gymnax.environments import environment, spaces
 from jax.random import gumbel
 from jraph import GraphsTuple
 
-from rl_blockchain.BlockEnv.BlockchainGraph import create_jraph_from_adj_matrix_fast, STATIC_MASKS_DICT, \
+from rl_blockchain.BlockEnv.BlockchainGraph import create_jraph_from_adj_matrix_fast, get_non_diag_indices, \
     create_rd_adj_matrix
 from rl_blockchain.BlockEnv.rewards import weighted_rewards, null_reward
 from rl_blockchain.BlockEnv.state_params import EnvState, EnvParams, get_stake_distribution, \
@@ -56,7 +56,7 @@ class JraphSpace(spaces.Space):
         feature_key, validator_key, chosen_node_key, edges_key = jax.random.split(key, 4)
         sample_features = self.features.sample(feature_key)
         adj_matrix = create_rd_adj_matrix(self.nb_nodes, edges_key)
-        graph: jraph.GraphsTuple = create_jraph_from_adj_matrix_fast(adj_matrix, STATIC_MASKS_DICT[self.nb_nodes])
+        graph: jraph.GraphsTuple = create_jraph_from_adj_matrix_fast(adj_matrix, get_non_diag_indices(self.nb_nodes))
         sample_nb_val = self.validator_features.sample(validator_key)
 
         # Add the features to the graph

@@ -21,13 +21,19 @@ def normalize_max(w: jax.Array) -> jax.Array:
     return w_norm
 
 
-@partial(jax.jit, static_argnames=['n'])
+@lru_cache(maxsize=None)
 def _create_pairwise_arrays(n):
-    indices = jnp.arange(n)
-    receivers, senders = jnp.meshgrid(indices, indices)
-    senders = senders.flatten()
-    receivers = receivers.flatten()
-    return senders, receivers
+    # ensure_compile_time_eval is REQUIRED, not an optimization: without it, the
+    # first call -- which may happen inside a jit trace -- would return tracers,
+    # and lru_cache would memoize them. Every later call then hands out a tracer
+    # from a dead trace (UnexpectedTracerError). Forcing eager evaluation makes
+    # the cached value a concrete array, which later traces embed as a constant.
+    with jax.ensure_compile_time_eval():
+        indices = jnp.arange(n)
+        receivers, senders = jnp.meshgrid(indices, indices)
+        senders = senders.flatten()
+        receivers = receivers.flatten()
+        return senders, receivers
 
 
 @partial(jax.jit, static_argnames=['n_nodes'])
@@ -90,16 +96,19 @@ def get_pair(k, n_nodes):
     return i * n_nodes + j
 
 
-@partial(jax.jit, static_argnames=['n_nodes'])
+@lru_cache(maxsize=None)
 def get_non_diag_indices(n_nodes: int):
     """
     Get the indices of the non-diagonal elements in a flattened adjacency matrix.
     :param n_nodes:
     :return:
     """
-    total = n_nodes * (n_nodes - 1)
-    ks = jnp.arange(total)
-    return jax.vmap(lambda k: get_pair(k, n_nodes))(ks)
+    # See _create_pairwise_arrays: lru_cache + jnp ops must be evaluated eagerly,
+    # or a first call from inside a trace memoizes a tracer.
+    with jax.ensure_compile_time_eval():
+        total = n_nodes * (n_nodes - 1)
+        ks = jnp.arange(total)
+        return jax.vmap(lambda k: get_pair(k, n_nodes))(ks)
 
 
 @jax.jit
@@ -112,27 +121,6 @@ def create_jraph_from_adj_matrix(adj_matrix: jnp.ndarray) -> jraph.GraphsTuple:
 def create_empty_jraph(n_nodes: int) -> jraph.GraphsTuple:
     mask = get_non_diag_indices(n_nodes)
     return create_empty_graph_fast(n_nodes, mask)
-
-
-
-
-class DictOfMask(dict):
-    """
-    A dictionary to collect masks for different graphs.
-    This is useful to avoid recomputing the masks multiple times.
-    """
-
-    def __getitem__(self, key):
-        assert type(key) is int, "Key must be an integer representing the number of nodes."
-        if key not in self:
-            super().__setitem__(key, get_non_diag_indices(key))
-        return super().__getitem__(key)
-
-    def __setitem__(self, key, value):
-        raise Exception("The dictionary is read-only. Use __getitem__ to access the masks.")
-
-
-STATIC_MASKS_DICT = DictOfMask()
 
 
 def create_empty_graph_fast(n_nodes: int, non_diag_mask: jnp.ndarray) -> jraph.GraphsTuple:
@@ -178,8 +166,14 @@ def create_jraph_from_adj_matrix_fast(adj_matrix: jnp.ndarray, non_diag_mask: jn
 
 @lru_cache(maxsize=None)
 def _topology(n_nodes: int) -> tuple[jnp.ndarray, jnp.ndarray]:
-    graph = create_empty_graph_fast(n_nodes, get_non_diag_indices(n_nodes))
-    return graph.senders, graph.receivers
+    # Goes through create_empty_graph_fast so the edge order is by construction the
+    # one the environment produced -- edge features are paired with their endpoints
+    # by position, so the two must never drift apart.
+    # ensure_compile_time_eval: with_topology runs inside the model's trace, and a
+    # memoized tracer would poison every later trace. See _create_pairwise_arrays.
+    with jax.ensure_compile_time_eval():
+        graph = create_empty_graph_fast(n_nodes, get_non_diag_indices(n_nodes))
+        return graph.senders, graph.receivers
 
 
 def strip_topology(graph):

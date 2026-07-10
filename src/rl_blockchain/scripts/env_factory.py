@@ -12,7 +12,7 @@ from gymnax.environments.environment import Environment, TEnvParams
 from rl_blockchain import BlockEnv
 from rl_blockchain.BlockEnv import StaticEnvParams, BlockchainEnv, create_rd_adj_matrix
 from rl_blockchain.BlockEnv.BlockchainGraph import import_positions_from_file, \
-    make_adj_matrix_from_positions, STATIC_MASKS_DICT
+    make_adj_matrix_from_positions, get_non_diag_indices
 from rl_blockchain.BlockEnv.state_params import Next_nb_val_fn, white_param_fn, EnvState, init_random_nb_val_factory, \
     EnvParams, Next_map_fn, init_fixed_nb_val_factory, Speeders
 from rl_blockchain.model import CategoricalSeparateMLP, PPOSeparate
@@ -235,7 +235,7 @@ class BlockchainEnvBuilder(EnvBuilder):
         init_nb_val_fct = init_random_nb_val_factory(nb_nodes) if config["voting_nodes"] == 0 else \
             init_fixed_nb_val_factory(config["voting_nodes"])
         next_val_fct = return_update_val_fn(next_val_type, 0, nb_nodes)
-        non_diag_mask = STATIC_MASKS_DICT[nb_nodes]
+        non_diag_mask = get_non_diag_indices(nb_nodes)
         speeder = Speeders.create(nb_nodes)
 
         @jax.jit
@@ -280,7 +280,7 @@ class BlockchainEnvCloseMapBuilder(BlockchainEnvBuilder):
         next_val_fct = return_update_val_fn(next_val_type, 0, nb_nodes)
 
         ref_adj_mat = make_adj_matrix_from_positions(positions)
-        ref_adj_mat_uniq = ref_adj_mat.flatten().take(STATIC_MASKS_DICT[nb_nodes])
+        ref_adj_mat_uniq = ref_adj_mat.flatten().take(get_non_diag_indices(nb_nodes))
         list_sigma = jnp.ones((ref_adj_mat_uniq.shape[0],), dtype=jnp.float32) * 0.05
 
         @jax.jit

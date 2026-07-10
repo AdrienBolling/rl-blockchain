@@ -10,7 +10,7 @@ from flax import struct
 from gymnax.environments import environment
 
 from rl_blockchain.BlockEnv.BlockchainGraph import create_rd_adj_matrix, normalize_max, \
-    create_empty_jraph, _create_pairwise_arrays, STATIC_MASKS_DICT
+    create_empty_jraph, _create_pairwise_arrays, get_non_diag_indices
 
 node_features_dict = {
     "node_id": 0,
@@ -35,7 +35,7 @@ class Speeders:
     @classmethod
     def create(cls, nb_nodes: int) -> 'Speeders':
         senders, receivers = _create_pairwise_arrays(nb_nodes)
-        mask = STATIC_MASKS_DICT[nb_nodes]
+        mask = get_non_diag_indices(nb_nodes)
         masked_senders = senders[mask]
         masked_receivers = receivers[mask]
         unique, inverse = generate_unique_inverse_senders_receivers(masked_senders, masked_receivers, nb_nodes)
