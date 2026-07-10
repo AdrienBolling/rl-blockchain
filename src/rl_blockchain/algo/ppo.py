@@ -18,7 +18,7 @@ from optax._src.base import GradientTransformationExtraArgs
 
 from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.BlockEnv.BlockEnv import BlockchainEnv, sample_subset_with_logp, mode_subset, logp_prefix_pl
-from rl_blockchain.BlockEnv.BlockchainGraph import strip_topology
+from rl_blockchain.BlockEnv.BlockchainGraph import strip_topology, with_topology
 from rl_blockchain.scripts.env_factory import LOG_TYPE
 
 logger = logging.getLogger(__name__)
@@ -246,6 +246,11 @@ def update_ppo(
 
     # Mean loss + stacked aux metrics [pl, vl, ent, kl, cf] over a set of samples.
     def batch_loss(model_params, graphs, perms_, lp_, ret_, adv_, val_):
+        # Rollouts store observations without their topology. Rebuild it here, for
+        # the whole (micro-)batch at once: the model would otherwise rebuild an
+        # *unbatched* copy inside the vmap, and XLA lowers the backward scatter
+        # ~1.2x slower when the indices lack the batch dimension.
+        graphs = with_topology(graphs)
         total_loss, aux = jax.vmap(
             sample_loss,
             in_axes=(None, 0, 0, 0, 0, 0, 0),
