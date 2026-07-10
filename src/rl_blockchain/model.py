@@ -2,6 +2,7 @@ import distrax
 import jraph as jr
 from flax import linen as nn
 from jax import numpy as jnp
+from rl_blockchain.BlockEnv.BlockchainGraph import with_topology
 from rl_blockchain.fast_agg import fast_segment_sum, OptGraphNetGAT
 
 
@@ -126,6 +127,9 @@ class PPOBackbone(nn.Module):
 
     @nn.compact
     def __call__(self, graph: jr.GraphsTuple):
+        # Accept observations stored without their topology (see `strip_topology`);
+        # a no-op when senders/receivers are already there.
+        graph = with_topology(graph)
         graph = graph._replace(nodes=graph.nodes[:, None], edges=graph.edges[:, None], globals=graph.globals[:, None])
 
         projector = jr.GraphMapFeatures(

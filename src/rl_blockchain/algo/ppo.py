@@ -18,6 +18,7 @@ from optax._src.base import GradientTransformationExtraArgs
 
 from rl_blockchain.BlockEnv import EnvParams
 from rl_blockchain.BlockEnv.BlockEnv import BlockchainEnv, sample_subset_with_logp, mode_subset, logp_prefix_pl
+from rl_blockchain.BlockEnv.BlockchainGraph import strip_topology
 from rl_blockchain.scripts.env_factory import LOG_TYPE
 
 logger = logging.getLogger(__name__)
@@ -67,7 +68,10 @@ def rollout(key_input, env: environment.Environment,
         )
 
         carry = [next_obs, next_state, next_key]
-        traj = (obs, perm, logp, reward, done, value, infos)
+        # The stacked observations dominate this function's memory. senders/receivers
+        # are constant across steps and 2/3 of the buffer, and the model rebuilds
+        # them (see `with_topology`), so never emit them. No-op on non-graph obs.
+        traj = (strip_topology(obs), perm, logp, reward, done, value, infos)
         return carry, traj
 
     # Scan over episode step loop

@@ -1,6 +1,6 @@
 import json
 import pathlib
-from functools import partial
+from functools import lru_cache, partial
 
 import jax
 import jax.numpy as jnp
@@ -160,6 +160,64 @@ def create_jraph_from_adj_matrix_fast(adj_matrix: jnp.ndarray, non_diag_mask: jn
     empty_graph = create_empty_graph_fast(adj_matrix.shape[0], non_diag_mask)
     edge_features = adj_matrix.flatten().take(non_diag_mask)  # [:, None]
     return empty_graph._replace(edges=edge_features)
+
+
+# ----------------------------------------------------------------------
+# Topology (senders / receivers) is derived, not observed
+# ----------------------------------------------------------------------
+# The observation graph is always the complete directed graph on ``n_nodes``
+# without self-loops, so ``senders``/``receivers`` are a pure function of
+# ``n_nodes``: identical at every step of every rollout. Only ``edges`` (the
+# distances) and ``nodes`` (the stake distribution) move.
+#
+# Stacking them over a rollout costs 2/3 of the observation buffer -- at
+# n_nodes=200 that is 1.78 GB of 2.67 GB for 3 envs x 2000 steps. So a rollout
+# can drop them with :func:`strip_topology` and the model puts them back with
+# :func:`with_topology`, where they lower to XLA constants. Nothing in between
+# (replay buffer, minibatching, the RL algorithm) needs to know about them.
+
+@lru_cache(maxsize=None)
+def _topology(n_nodes: int) -> tuple[jnp.ndarray, jnp.ndarray]:
+    graph = create_empty_graph_fast(n_nodes, get_non_diag_indices(n_nodes))
+    return graph.senders, graph.receivers
+
+
+def strip_topology(graph):
+    """Drop the derivable ``senders``/``receivers`` from an observation graph.
+
+    A no-op on non-graph observations, so a rollout may call it unconditionally.
+    ``jax.tree`` treats the resulting ``None`` fields as empty subtrees, so the
+    stripped graph still indexes, batches and vmaps like any other PyTree.
+    """
+    if not isinstance(graph, jraph.GraphsTuple):
+        return graph
+    return graph._replace(senders=None, receivers=None)
+
+
+def with_topology(graph: jraph.GraphsTuple) -> jraph.GraphsTuple:
+    """Inverse of :func:`strip_topology`; a no-op when the topology is present.
+
+    Rebuilt through :func:`create_empty_graph_fast`, the same constructor the
+    environment used, so the edge order matches ``edges`` element for element.
+    ``n_nodes`` comes from the (static) node-axis length, so this works under
+    ``jit`` and ``vmap``.
+
+    Raises if the graph is not the complete one this reconstruction assumes: edge
+    features are paired with their endpoints *by position*, so a sparse topology
+    would otherwise be silently mispaired rather than rejected.
+    """
+    if graph.senders is not None:
+        return graph
+    n_nodes = graph.nodes.shape[0]
+    n_edges = graph.edges.shape[0]
+    if n_edges != n_nodes * (n_nodes - 1):
+        raise ValueError(
+            f"Cannot derive the topology of a graph with {n_nodes} nodes and "
+            f"{n_edges} edges: expected {n_nodes * (n_nodes - 1)} (complete, no "
+            f"self-loops). A sparse graph must carry its own senders/receivers."
+        )
+    senders, receivers = _topology(n_nodes)
+    return graph._replace(senders=senders, receivers=receivers)
 
 
 @jax.jit
