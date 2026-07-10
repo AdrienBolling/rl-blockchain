@@ -13,10 +13,11 @@ from tqdm import tqdm
 
 from rl_blockchain.BlockEnv import BlockchainEnv
 from rl_blockchain.BlockEnv.NormailzationWrapper import NormalizationWrapper
-from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch, load_ppo_state, \
-    make_optimizer
+from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, train_epoch, \
+    latest_checkpoint_step, make_optimizer
 from rl_blockchain.algo.ppo import eval_ppo
 from rl_blockchain.scripts.env_factory import GenericEnvFactory, LOG_TYPE
+from rl_blockchain.utils.run_config import apply_model_config, save_run_config
 
 logger = logging.getLogger(__name__)
 
@@ -86,12 +87,27 @@ def train_ppo(ARGS: Namespace):
     # Create the checkpointmanager
     checkpoint_manager = create_checkpoint_manager(
         checkpoint_dir=chkpt_dir,
-        max_to_keep=1,
+        max_to_keep=ARGS.checkpoint_max_to_keep,
         save_interval_steps=1,
+        keep_period=ARGS.checkpoint_keep_period or None,
     )
+    # The weights alone cannot be reloaded without the architecture that made them.
+    save_run_config(chkpt_dir, ARGS)
 
     # Create the PPO state
-    ppo_state = create_ppo_state(resume_dir=load_chkpt_name, env=env, seed=ARGS.seed, lr=lr_fn(0), model=model)
+    ppo_state = create_ppo_state(resume_dir=load_chkpt_name, env=env, seed=ARGS.seed, lr=lr_fn(0), model=model,
+                                 step=ARGS.checkpoint_step, warm_start=ARGS.warm_start)
+
+    # A full resume continues where the checkpoint stopped, so the lr / clip / entropy
+    # schedules and the wandb x-axis pick up at the right epoch instead of restarting.
+    start_epoch = 0
+    if load_chkpt_name is not None and not ARGS.warm_start:
+        last_step = ARGS.checkpoint_step
+        if last_step is None:
+            last_step = latest_checkpoint_step(load_chkpt_name)
+        start_epoch = last_step + 1
+        env_step = start_epoch * ((num_steps * num_envs) // batch_size) * batch_size
+        logger.info(f"Resuming at epoch {start_epoch} (env_step={env_step})")
 
     key, key_eval = jax.random.split(key)
 
@@ -100,44 +116,52 @@ def train_ppo(ARGS: Namespace):
         env_train = NormalizationWrapper(env_train)
 
     # Train the PPO agent
-    for epoch in tqdm(range(num_epochs)):
-        # Memoized on the float lr so a constant schedule reuses one stable
-        # optimizer object -> update_ppo compiles once instead of every epoch.
-        model_opt = make_optimizer(float(lr_fn(epoch)))
-        # Train for one epoch
-        logger.info(f"Epoch {epoch + 1}/{num_epochs}")
-        ppo_state, env_step = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env_train,
-                                           model=model, num_steps=num_steps,
-                                           num_envs=num_envs, create_params_fn=create_params_fn,
-                                           batch_size=batch_size, model_opt=model_opt, gamma=gamma,
-                                           lambda_=lambda_,
-                                           clip_ratio=clip_ratio_fn(epoch), log_fn=log_fn,
-                                           env_step=env_step, value_coef=value_coef,
-                                           entropy_coef=entropy_coef_fn(epoch),
-                                           norm_advantage=norm_advantages,
-                                           micro_batch_size=getattr(ARGS, "micro_batch_size", None))
-        key, _ = jax.random.split(key)
-        if epoch % ARGS.eval_interval == 0:
-            logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")
-            # Evaluate the PPO agent
-            metrics = eval_ppo(
-                ppo_state=ppo_state,
-                key=key_eval,
-                env=env,
-                model=model,
-                create_params_fn=create_params_fn,
-                num_episodes=ARGS.eval_episodes,
-                recorded_episodes=5,
-                batch_size=min(num_envs, ARGS.eval_episodes),
-                log_fn=log_fn
-            )
+    try:
+        for epoch in tqdm(range(start_epoch, num_epochs)):
+            # Memoized on the float lr so a constant schedule reuses one stable
+            # optimizer object -> update_ppo compiles once instead of every epoch.
+            model_opt = make_optimizer(float(lr_fn(epoch)))
+            # Train for one epoch
+            logger.info(f"Epoch {epoch + 1}/{num_epochs}")
+            ppo_state, env_step = train_epoch(ppo_state=ppo_state, epoch=epoch, env=env_train,
+                                              model=model, num_steps=num_steps,
+                                              num_envs=num_envs, create_params_fn=create_params_fn,
+                                              batch_size=batch_size, model_opt=model_opt, gamma=gamma,
+                                              lambda_=lambda_,
+                                              clip_ratio=clip_ratio_fn(epoch), log_fn=log_fn,
+                                              env_step=env_step, value_coef=value_coef,
+                                              entropy_coef=entropy_coef_fn(epoch),
+                                              norm_advantage=norm_advantages,
+                                              micro_batch_size=getattr(ARGS, "micro_batch_size", None))
+            key, _ = jax.random.split(key)
+            if epoch % ARGS.eval_interval == 0:
+                logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")
+                # Evaluate the PPO agent
+                metrics = eval_ppo(
+                    ppo_state=ppo_state,
+                    key=key_eval,
+                    env=env,
+                    model=model,
+                    create_params_fn=create_params_fn,
+                    num_episodes=ARGS.eval_episodes,
+                    recorded_episodes=5,
+                    batch_size=min(num_envs, ARGS.eval_episodes),
+                    log_fn=log_fn
+                )
 
-            wandb.log({"eval": metrics}, step=env_step)
-            logger.info(metrics)
+                wandb.log({"eval": metrics}, step=env_step)
+                logger.info(metrics)
 
-        # Save the checkpoint
-        checkpoint_manager.save(step=epoch, args=ocp.args.StandardSave(ppo_state))
-        # logger.info(f"Epoch {epoch} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
+            # Save the checkpoint
+            checkpoint_manager.save(step=epoch, args=ocp.args.StandardSave(ppo_state))
+            # logger.info(f"Epoch {epoch} - Policy Loss: {policy_loss}, Value Loss: {value_loss}")
+    finally:
+        # orbax saves asynchronously. Without this the last save is still an
+        # uncommitted '<step>.orbax-checkpoint-tmp' when the interpreter exits, so
+        # the final epoch is silently lost (and orbax dies on shutdown). In a
+        # `finally` so a crash or a SLURM time-out still commits what it can.
+        checkpoint_manager.wait_until_finished()
+        checkpoint_manager.close()
     wandb.finish()
 
 
@@ -166,10 +190,16 @@ def eval_ppo_run(args: Namespace):
     key = jax.random.PRNGKey(args.seed)
     key_eval, state_key, key_param = jax.random.split(key, 3)
 
+    chkpt_dir: pathlib.Path = args.chkpt_dir
+    # Rebuild the exact architecture the checkpoint was trained with, so the user
+    # does not have to re-supply --n-nodes / --gat-arch / ... from memory.
+    apply_model_config(args, chkpt_dir)
+
     model, env, create_params_fn, log_fn = get_env_config(args, key_param)
 
-    chkpt_dir: pathlib.Path = args.chkpt_dir
-    ppo_state = load_ppo_state(chkpt_dir, state_key)
+    # lr only shapes the (unused) optimizer state of the restore target.
+    ppo_state = create_ppo_state(resume_dir=chkpt_dir, env=env, seed=args.seed, lr=1e-3,
+                                 model=model, step=args.checkpoint_step)
 
     # Evaluate the PPO agent
     metrics = eval_ppo(

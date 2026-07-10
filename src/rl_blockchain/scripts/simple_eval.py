@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from rl_blockchain.BlockEnv.BlockEnv import mode_subset
-from rl_blockchain.algo.ppo import load_ppo_state
+from rl_blockchain.algo.ppo import create_ppo_state
 from rl_blockchain.scripts.env_factory import GenericEnvFactory, return_update_params_fn
 from rl_blockchain.scripts.parser import UpdateParams
 import jax.numpy as jnp
@@ -49,7 +49,8 @@ if __name__ == '__main__':
     update_params_fn = return_update_params_fn(UpdateParams.ORN_UHL_UPDATE)
 
     chkpt_dir: pathlib.Path = args.chkpt_dir
-    ppo_state = load_ppo_state(chkpt_dir, state_key)
+    ppo_state = create_ppo_state(resume_dir=chkpt_dir, env=env, seed=args.seed,
+                                 lr=1e-3, model=model)
 
     obs, state = env.reset(key, params)
 

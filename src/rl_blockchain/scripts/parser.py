@@ -297,6 +297,32 @@ def _parse_args() -> Namespace:
         default=None,
         help="Path of the checkpoint to load. Default is None.",
     )
+    train_parser.add_argument(
+        "--checkpoint-step",
+        type=int,
+        default=None,
+        help="Step (epoch) to resume from inside --checkpoint. Default: the latest.",
+    )
+    train_parser.add_argument(
+        "--warm-start",
+        action="store_true",
+        help="Load only the network weights from --checkpoint: reset the optimizer "
+             "moments, the RNG stream and the epoch schedules. Default is a full "
+             "resume (weights + optimizer + RNG, schedules continue).",
+    )
+    train_parser.add_argument(
+        "--checkpoint-max-to-keep",
+        type=int,
+        default=5,
+        help="Number of most-recent checkpoints to retain. Default is 5.",
+    )
+    train_parser.add_argument(
+        "--checkpoint-keep-period",
+        type=int,
+        default=50,
+        help="Additionally retain every N-th epoch forever, so old models stay "
+             "loadable. Set to 0 to disable. Default is 50.",
+    )
 
     # Eval of the PPO agent training
     train_parser.add_argument(
@@ -336,6 +362,12 @@ def _parse_args() -> Namespace:
         "chkpt_dir",
         type=pathlib.Path,
         help="Directory to load the checkpoint from.",
+    )
+    eval_parser.add_argument(
+        "--checkpoint-step",
+        type=int,
+        default=None,
+        help="Step (epoch) to evaluate inside chkpt_dir. Default: the latest.",
     )
 
     return parser.parse_args()

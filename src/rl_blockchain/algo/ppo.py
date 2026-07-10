@@ -560,26 +560,49 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
 def create_checkpoint_manager(
         checkpoint_dir: Union[str, Path],
         max_to_keep: int = 5,
-        save_interval_steps: int = 1
+        save_interval_steps: int = 1,
+        keep_period: Optional[int] = None,
+        create: bool = True,
 ) -> ocp.CheckpointManager:
     """
     Build and return an Orbax CheckpointManager that will keep at most
     `max_to_keep` checkpoints and only saves every `save_interval_steps`.
-    """
-    # make sure the directory exists
 
-    os.makedirs(checkpoint_dir, exist_ok=True)
+    ``keep_period`` additionally pins every N-th step forever, so old models stay
+    loadable even though only the newest ``max_to_keep`` are otherwise retained.
+
+    Pass ``create=False`` to open an existing directory for reading: without it a
+    mistyped path is silently created and then reported as "no checkpoints".
+
+    NOTE: ``save`` is asynchronous. Call ``wait_until_finished()`` (or ``close()``)
+    before the process exits, or the last checkpoint stays an uncommitted
+    ``<step>.orbax-checkpoint-tmp`` directory and is lost.
+    """
+    if create:
+        os.makedirs(checkpoint_dir, exist_ok=True)
+    elif not Path(checkpoint_dir).is_dir():
+        raise FileNotFoundError(f"Checkpoint directory does not exist: {checkpoint_dir}")
 
     options = ocp.CheckpointManagerOptions(
         max_to_keep=max_to_keep,
         save_interval_steps=save_interval_steps,
-        create=True,
+        keep_period=keep_period,
+        create=create,
     )
     manager = ocp.CheckpointManager(
         str(checkpoint_dir),
         options=options,
     )
     return manager
+
+
+def latest_checkpoint_step(resume_dir: Union[str, Path]) -> Optional[int]:
+    """Newest *committed* step in ``resume_dir``, or None if there is none."""
+    manager = create_checkpoint_manager(Path(resume_dir).absolute(), create=False)
+    try:
+        return manager.latest_step()
+    finally:
+        manager.close()
 
 
 def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module, key: jax.Array,
@@ -629,49 +652,67 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
     return metrics
 
 
-# Modified create_ppo_state to use the manager
-def create_ppo_state(resume_dir: Optional[Path], env: environment.Environment, seed: int, lr: float,
-                     model: nn.Module) -> PPOState:
-    """
-    Initialize or restore a PPOState.  If `resume_dir` is provided, uses
-    `checkpoint_manager` to restore the latest checkpoint; if `warm_start`
-    is True, reinitializes optimizer states with loaded network weights.
-    Otherwise, does a fresh init.
-    """
-    model_opt = make_optimizer(float(lr))
+def init_ppo_state(env: environment.Environment, seed: int, lr: float, model: nn.Module) -> PPOState:
+    """Fresh PPOState. Also serves as the *target* a checkpoint is restored into."""
     key = jax.random.PRNGKey(seed)
-
-    # --- restore path ---
-    if resume_dir:
-        # restore the entire PPOState PYTree
-        state: PPOState = load_ppo_state(resume_dir, key)
-        state = state.replace(opt_state=model_opt.init(state.params))
-        return state
-
-    # --- fresh initialization ---
-    obs_key, ppo_key, state_key = jax.random.split(key, 3)
-    first_obs, first_state = env.reset(obs_key, env.default_params)
+    obs_key, ppo_key, _ = jax.random.split(key, 3)
+    first_obs, _ = env.reset(obs_key, env.default_params)
     model_vars = model.init(ppo_key, first_obs)
-    model_opt_state = model_opt.init(model_vars)
-    print("Initialized new PPOState.")
+    model_opt_state = make_optimizer(float(lr)).init(model_vars)
     return PPOState(model_vars, model_opt_state, ppo_key)
 
 
-def load_ppo_state(resume_dir: Path, key: jax.Array) -> PPOState:
+def create_ppo_state(resume_dir: Optional[Path], env: environment.Environment, seed: int, lr: float,
+                     model: nn.Module, step: Optional[int] = None, warm_start: bool = False) -> PPOState:
     """
-    Load a PPOState from a checkpoint or initialize a new one.
+    Initialize or restore a PPOState.
+
+    Without ``resume_dir``: fresh init. With it: restore ``step`` (default: the
+    latest) into a freshly-initialized state, which both validates the shapes and
+    gives optax back its real ``ScaleByAdamState`` rather than raw dicts.
+
+    ``warm_start=True`` keeps only the network weights and resets the optimizer
+    moments and the RNG stream -- use it to fine-tune from another run. The
+    default is a true resume: weights *and* optimizer *and* RNG.
     """
-    checkpoint_manager = create_checkpoint_manager(resume_dir.absolute())
-    step = checkpoint_manager.latest_step()
-    if step is None:
-        raise ValueError(f"No checkpoints found in {resume_dir}")
-    # restore the entire PPOState PYTree
-    restored_state = checkpoint_manager.restore(step)
-    state = PPOState(
-        params=restored_state["params"],
-        opt_state=None,
-        rng_key=key
-    )
-    print(type(state))
-    print(f"Loaded checkpoint from step {step}")
+    fresh = init_ppo_state(env, seed, lr, model)
+    if not resume_dir:
+        logger.info("Initialized new PPOState.")
+        return fresh
+    return load_ppo_state(resume_dir, fresh.rng_key, target=fresh, step=step, warm_start=warm_start)
+
+
+def load_ppo_state(resume_dir: Path, key: jax.Array, target: PPOState,
+                   step: Optional[int] = None, warm_start: bool = False) -> PPOState:
+    """
+    Restore a PPOState from ``resume_dir`` into the structure of ``target``.
+
+    ``target`` is required: restoring without one yields untyped dicts (optax
+    cannot consume them) and skips shape validation, so an architecture mismatch
+    would only surface later as a confusing flax error.
+    """
+    resume_dir = Path(resume_dir)
+    checkpoint_manager = create_checkpoint_manager(resume_dir.absolute(), create=False)
+    try:
+        if step is None:
+            step = checkpoint_manager.latest_step()
+        elif step not in checkpoint_manager.all_steps():
+            raise ValueError(
+                f"Step {step} not found in {resume_dir}. "
+                f"Available: {sorted(checkpoint_manager.all_steps())}")
+        if step is None:
+            # A run killed mid-save leaves '<step>.orbax-checkpoint-tmp' behind.
+            pending = sorted(p.name for p in resume_dir.glob("*.orbax-checkpoint-tmp"))
+            hint = f" Found uncommitted (lost) saves: {pending}." if pending else ""
+            raise ValueError(f"No committed checkpoints found in {resume_dir}.{hint}")
+
+        state: PPOState = checkpoint_manager.restore(step, args=ocp.args.StandardRestore(target))
+    finally:
+        checkpoint_manager.close()
+
+    if warm_start:
+        state = state.replace(opt_state=target.opt_state, rng_key=key)
+        logger.info(f"Warm-started from step {step} (weights only; optimizer and RNG reset)")
+    else:
+        logger.info(f"Resumed checkpoint from step {step} (weights, optimizer and RNG)")
     return state
