@@ -4,6 +4,8 @@ from argparse import Namespace
 
 import wandb
 
+from rl_blockchain.utils.run_counter import allocate_run_name
+
 
 def setup_logging(args: Namespace, run: "wandb.Run") -> str:
     level = getattr(logging, args.logging_level.upper(), logging.INFO)
@@ -47,18 +49,12 @@ def setup_wandb(args: Namespace) -> wandb.sdk.wandb_run.Run:
     # Convertir Namespace en dictionnaire propre
     config = vars(args)
 
-    api = wandb.Api()
     entity = args.wandb_entity
     project = args.wandb_project
 
-    # Nouveau run
-    try:
-        runs = api.runs(f"{entity}/{project}", order="-created_at")
-        run_number = len(runs)
-    except wandb.errors.CommError:
-        run_number = 0
-
-    run_id = f"{args.logging_prefix}_{run_number}"
+    # Nouveau run. The checkpoint dir is named after this, so the two cannot drift.
+    run_id = allocate_run_name(args)
+    args.run_name = run_id
     run = wandb.init(
         project=project,
         entity=entity,

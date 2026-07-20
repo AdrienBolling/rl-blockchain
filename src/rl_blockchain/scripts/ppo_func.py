@@ -18,6 +18,7 @@ from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, 
 from rl_blockchain.algo.ppo import eval_ppo
 from rl_blockchain.scripts.env_factory import GenericEnvFactory, LOG_TYPE
 from rl_blockchain.utils.run_config import apply_model_config, save_run_config
+from rl_blockchain.utils.run_counter import project_dir
 
 logger = logging.getLogger(__name__)
 
@@ -72,17 +73,8 @@ def train_ppo(ARGS: Namespace):
     # If we need to resume a training, get the name of the checkpoint
     load_chkpt_name: pathlib.Path = ARGS.checkpoint
 
-    # If the checkpoint is 'latest', get the latest run id
-    api = wandb.Api()
-    runs = api.runs(
-        f"{ARGS.wandb_entity}/{ARGS.wandb_project}",
-        order="created_at",
-    )
-
-    new_run_chkpt_name = f"run_{len(runs)}"
-
-    # Checkpoint_dir
-    chkpt_dir = f"{ARGS.checkpoint_dir}/{ARGS.wandb_entity}_{ARGS.wandb_project}/{new_run_chkpt_name}"
+    # Name reserved by setup_wandb; deriving it again here shifted it by one.
+    chkpt_dir = project_dir(ARGS) / ARGS.run_name
 
     # Create the checkpointmanager
     checkpoint_manager = create_checkpoint_manager(

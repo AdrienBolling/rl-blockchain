@@ -27,6 +27,7 @@ import pytest
 from rl_blockchain.algo.ppo import (create_checkpoint_manager, create_ppo_state, init_ppo_state,
                                     latest_checkpoint_step, load_ppo_state, make_optimizer)
 from rl_blockchain.utils.run_config import CONFIG_FILENAME, apply_model_config, save_run_config
+from rl_blockchain.utils.run_counter import COUNTER_FILENAME, allocate_run_name, project_dir
 
 N_NODES, LR = 7, 3e-4
 
@@ -228,3 +229,44 @@ def test_apply_model_config_is_a_noop_for_older_runs(tmp_path):
     args = Namespace(n_nodes=25)
     assert apply_model_config(args, tmp_path) is False
     assert args.n_nodes == 25
+
+
+def _counter_args(tmp_path, prefix="train"):
+    return Namespace(checkpoint_dir=str(tmp_path), wandb_entity="ent",
+                     wandb_project="proj", logging_prefix=prefix)
+
+
+def test_run_names_increment_without_network(tmp_path):
+    args = _counter_args(tmp_path)
+    assert [allocate_run_name(args) for _ in range(3)] == ["train_0", "train_1", "train_2"]
+    assert (project_dir(args) / COUNTER_FILENAME).is_file()
+
+
+def test_run_numbering_seeds_past_existing_dirs(tmp_path):
+    args = _counter_args(tmp_path)
+    for name in ("run_63", "run_204", "train_12", "not-a-run"):
+        (project_dir(args) / name).mkdir(parents=True)
+
+    assert allocate_run_name(args) == "train_205"
+
+
+def test_run_name_skips_a_stale_counter(tmp_path):
+    args = _counter_args(tmp_path)
+    assert allocate_run_name(args) == "train_0"
+    (project_dir(args) / "train_1").mkdir()
+
+    assert allocate_run_name(args) == "train_2"
+
+
+def test_corrupt_counter_reseeds_rather_than_colliding(tmp_path):
+    args = _counter_args(tmp_path)
+    allocate_run_name(args)
+    (project_dir(args) / "train_0").mkdir()
+    (project_dir(args) / COUNTER_FILENAME).write_text("{trunca")
+
+    assert allocate_run_name(args) == "train_1"
+
+
+def test_prefixes_share_one_counter(tmp_path):
+    assert allocate_run_name(_counter_args(tmp_path, "train")) == "train_0"
+    assert allocate_run_name(_counter_args(tmp_path, "eval")) == "eval_1"
