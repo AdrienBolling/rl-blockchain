@@ -89,6 +89,13 @@ def _parse_args() -> Namespace:
         help="Number of voting nodes in the environment. Default is 7.",
     )
     parser.add_argument(
+        "--horizon",
+        type=int,
+        default=200,
+        help="Episode horizon: length of the validator-history window (ring_history). "
+             "Default is 200.",
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=0,

@@ -254,7 +254,8 @@ class BlockchainEnvBuilder(EnvBuilder):
         next_edge_type = UpdateDistStrat.NO_UPDATE if "next_edge_type" not in config else config["next_edge_type"]
         next_edge_fn = return_update_maps_fn(next_edge_type)
         static_params = StaticEnvParams.create(config["n_nodes"], REF_FILENAME[config["n_nodes"]], init_nb_val_fct,
-                                               next_val_fct, next_edge_fn)
+                                               next_val_fct, next_edge_fn,
+                                               horizon=config.get("horizon", 200))
         env = BlockchainEnv(env_params, static_params)
         # model = PPO_NET_GAT(gat1_out, gat2_out, gat2_nodes_out, env.num_actions)
         model = PPOSeparate(env.num_actions, backbone_gat_dim, actor_gcn_dim, critic_gnn_dim)
@@ -298,7 +299,7 @@ class BlockchainEnvCloseMapBuilder(BlockchainEnvBuilder):
         env_params = BlockEnv.EnvParams.create(int_adj_mat, config["reward_weights"])
         next_edge_fn = return_update_maps_fn(next_edge_type)
         static_params = StaticEnvParams.create(nb_nodes, REF_FILENAME[nb_nodes], init_nb_val_fct, next_val_fct,
-                                               next_map_fn=next_edge_fn)
+                                               next_map_fn=next_edge_fn, horizon=config.get("horizon", 200))
         env = BlockchainEnv(env_params, static_params)
         model = PPOSeparate(env.num_actions, backbone_gat_dim, actor_gcn_dim, critic_gnn_dim)
 

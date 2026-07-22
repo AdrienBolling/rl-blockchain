@@ -160,15 +160,17 @@ def train_ppo(ARGS: Namespace):
 def get_env_config(ARGS: Namespace, key_param: jax.Array) \
         -> Tuple[flax.linen.Module, Environment, Callable[[jax.Array], TEnvParams], LOG_TYPE]:
     env_name = ARGS.env.lower()
+    horizon = getattr(ARGS, "horizon", 200)  # older checkpoints predate --horizon
     if env_name == "blockenv":
         config = {"n_nodes": ARGS.n_nodes, "gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
                   "reward_weights": ARGS.reward_weights, "next_val_type": ARGS.update_params,
-                  "next_edge_type": ARGS.next_edge_type}
+                  "next_edge_type": ARGS.next_edge_type, "horizon": horizon}
     elif env_name == "blockenv_close_map":
         assert ARGS.ref_map_file is not None, "ref_map_file must be provided for blockenv_close_map"
         config = {"gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
                   "reward_weights": ARGS.reward_weights, "ref_map_file": ARGS.ref_map_file,
-                  "next_val_type": ARGS.update_params, "next_edge_type": ARGS.next_edge_type}
+                  "next_val_type": ARGS.update_params, "next_edge_type": ARGS.next_edge_type,
+                  "horizon": horizon}
     elif env_name == "cartpole":
         config = {}
     else:

@@ -25,7 +25,7 @@ CONFIG_FILENAME = "run_config.json"
 #: cannot be restored without. Everything else in the run config is informational.
 MODEL_CONFIG_KEYS = (
     "env", "n_nodes", "gat_arch", "voting_nodes", "reward_weights",
-    "update_params", "next_edge_type", "ref_map_file",
+    "update_params", "next_edge_type", "ref_map_file", "horizon",
 )
 
 _ENUM_KEYS = {"update_params": UpdateValStrat, "next_edge_type": UpdateDistStrat}
