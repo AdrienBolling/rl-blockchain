@@ -25,6 +25,10 @@ import warnings
 # is already fast, `true` can be slower -- override with RLB_XLA_FLAGS there.
 _SCATTER_FIX = "--xla_gpu_enable_scatter_determinism_expander=true"
 
+_DISABLE_COMMAND_BUFFERS = "--xla_gpu_enable_command_buffer="
+
+_DEFAULT_FLAGS = f"{_SCATTER_FIX} {_DISABLE_COMMAND_BUFFERS}"
+
 
 def configure_xla_flags() -> str:
     """Prepend the project's XLA GPU fix to ``XLA_FLAGS``. Idempotent.
@@ -42,7 +46,7 @@ def configure_xla_flags() -> str:
         return os.environ.get("XLA_FLAGS", "")
 
     existing = os.environ.get("XLA_FLAGS", "")
-    extra = os.environ.get("RLB_XLA_FLAGS", _SCATTER_FIX)
+    extra = os.environ.get("RLB_XLA_FLAGS", _DEFAULT_FLAGS)
 
     to_add = [f for f in extra.split() if f.split("=")[0] not in existing]
     merged = " ".join(filter(None, [existing, *to_add]))
