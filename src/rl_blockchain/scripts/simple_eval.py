@@ -21,6 +21,7 @@ written to a JSON file (``--output``).
 import argparse
 import json
 import pathlib
+import sys
 
 # XLA flags must be set before the first `import jax` (see utils/jax_runtime).
 from rl_blockchain.utils.jax_runtime import configure_compilation_cache, configure_xla_flags
@@ -162,6 +163,7 @@ def main() -> None:
     times_validator = np.zeros(n_nodes)
     rewards: list[float] = []
     nb_val_per_step: list[int] = []
+    selected_per_step: list[list[int]] = []
     metrics: dict[str, list[float]] = {}  # per-step env infos (gini, distance, ...)
 
     for i in range(args.eval_steps):
@@ -181,9 +183,10 @@ def main() -> None:
         for k, v in infos.items():
             metrics.setdefault(k, []).append(float(v))
 
+        # stdout: the selection only -- one line per step, selected node indices.
         chosen = np.asarray(jnp.where(action)[0]).tolist()
-        print(f"Step {i + 1} - Reward: {float(reward):.4f}, Done: {bool(done)}, "
-              f"nb_val: {nb_val_per_step[-1]}, chosen: {chosen}")
+        selected_per_step.append(chosen)
+        print(" ".join(map(str, chosen)))
 
     # ---- assemble and write the JSON results ----
     checkpoint_name = args.chkpt_dir.resolve().name
@@ -204,6 +207,7 @@ def main() -> None:
         "global_reward": float(np.sum(rewards)),
         "mean_reward": float(np.mean(rewards)),
         "nb_val_per_step": nb_val_per_step,
+        "selected_per_step": selected_per_step,
         "validator_selection_frequency": times_validator.astype(int).tolist(),
         # Mean of every per-step env metric (gini, distance, *_reward, ...).
         "metrics_mean": {k: float(np.mean(v)) for k, v in metrics.items()},
@@ -211,9 +215,10 @@ def main() -> None:
 
     out_path = args.output or pathlib.Path(f"simple_eval_{checkpoint_name}.json")
     out_path.write_text(json.dumps(results, indent=2))
-    print(f"\nGlobal reward: {results['global_reward']:.4f} "
-          f"(mean {results['mean_reward']:.4f}) over {args.eval_steps} steps")
-    print(f"Results written to {out_path.resolve()}")
+    # Notices go to stderr so stdout stays a clean list of selections.
+    print(f"Global reward: {results['global_reward']:.4f} "
+          f"(mean {results['mean_reward']:.4f}) over {args.eval_steps} steps", file=sys.stderr)
+    print(f"Results written to {out_path.resolve()}", file=sys.stderr)
 
     if not args.no_plot:
         mode_label = (f"fixed={args.voting_nodes}" if not ornuhl

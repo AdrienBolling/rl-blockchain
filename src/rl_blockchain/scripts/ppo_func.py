@@ -1,3 +1,4 @@
+import json
 import logging
 import pathlib
 from argparse import Namespace
@@ -207,5 +208,23 @@ def eval_ppo_run(args: Namespace):
         log_fn=log_fn
     )
 
+    # Write the aggregate results to JSON (same spirit as simple_eval): no wandb.
+    checkpoint_name = chkpt_dir.resolve().name
+    results = {
+        "model": checkpoint_name,
+        "checkpoint_dir": str(chkpt_dir.resolve()),
+        "checkpoint_step": args.checkpoint_step,  # None => latest
+        "seed": args.seed,
+        "num_episodes": args.eval_episodes,
+        "n_nodes": args.n_nodes,
+        "horizon": getattr(args, "horizon", 200),
+        "reward_weights": [float(w) for w in args.reward_weights],
+        # Every aggregate metric eval_ppo produced (gini, distance, *_reward,
+        # nb_validators, avg_returns_episode, reward_0..4, ...).
+        "metrics": {k: float(v) for k, v in metrics.items()},
+    }
+
+    out_path = args.output or pathlib.Path(f"eval_{checkpoint_name}.json")
+    out_path.write_text(json.dumps(results, indent=2))
     logger.info(metrics)
-    print(metrics)
+    print(f"Results written to {out_path.resolve()}")

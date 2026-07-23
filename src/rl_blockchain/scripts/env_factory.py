@@ -1,4 +1,5 @@
 import abc
+import logging
 from functools import partial
 from typing import Callable, Dict, Tuple, Any, List
 
@@ -18,13 +19,15 @@ from rl_blockchain.BlockEnv.state_params import Next_nb_val_fn, white_param_fn, 
 from rl_blockchain.model import CategoricalSeparateMLP, PPOSeparate
 from rl_blockchain.scripts.parser import REF_FILENAME, UpdateValStrat, UpdateDistStrat
 
+logger = logging.getLogger(__name__)
+
 # Type alias
 LOG_TYPE = Callable[[dict[str, jax.Array], jax.Array, jax.Array], dict[str, jax.Array]]
 EnvInitOutput = Tuple[nn.Module, Environment, TEnvParams, Callable[[jax.Array], TEnvParams], LOG_TYPE]
 
 
 def return_update_val_fn(update_mode: UpdateValStrat, nb_val: int, nb_node: int) -> Next_nb_val_fn:
-    print(update_mode.name)
+    logger.debug("validator update strategy: %s", update_mode.name)
     if update_mode == UpdateValStrat.NO_UPDATE:
         return white_param_fn
     if update_mode == UpdateValStrat.THRESHOLD_UPDATE:
@@ -37,7 +40,7 @@ def return_update_val_fn(update_mode: UpdateValStrat, nb_val: int, nb_node: int)
 
 
 def return_update_maps_fn(update_mode: UpdateDistStrat) -> Next_map_fn:
-    print(update_mode.name)
+    logger.debug("edge update strategy: %s", update_mode.name)
     if update_mode == UpdateDistStrat.NO_UPDATE:
         return next_edge_white
     if update_mode == UpdateDistStrat.ORN_UHL_UPDATE:

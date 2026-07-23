@@ -376,5 +376,12 @@ def _parse_args() -> Namespace:
         default=None,
         help="Step (epoch) to evaluate inside chkpt_dir. Default: the latest.",
     )
+    eval_parser.add_argument(
+        "--output",
+        type=pathlib.Path,
+        default=None,
+        help="Path to write the JSON evaluation results. Default: "
+             "'eval_<checkpoint-name>.json' in the cwd.",
+    )
 
     return parser.parse_args()
