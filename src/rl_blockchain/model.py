@@ -197,16 +197,25 @@ class PPOActorHead(nn.Module):
 class PPOCriticHead(nn.Module):
     critic_gnn_dim: int
 
+    # Decomposed value: one head per reward component, order [gini, distance] (see
+    # rewards.weighted_rewards). Each head is trained against its own GAE return so
+    # the gini value is not corrupted by the much larger distance-reward variance.
+    num_reward_components: int = 2
+
     @nn.compact
     def __call__(self, shared_graph):
         crit = jr.GraphNetwork(
             update_edge_fn=make_update_fn([self.critic_gnn_dim, self.critic_gnn_dim]),
             update_node_fn=make_update_fn([self.critic_gnn_dim, self.critic_gnn_dim]),
-            update_global_fn=make_update_fn([self.critic_gnn_dim * 2, self.critic_gnn_dim, 1], last_activation=False),
+            update_global_fn=make_update_fn(
+                [self.critic_gnn_dim * 2, self.critic_gnn_dim, self.num_reward_components],
+                last_activation=False),
             aggregate_edges_for_nodes_fn=fast_segment_sum,
             aggregate_nodes_for_globals_fn=fast_segment_sum,
         )(shared_graph)
-        return crit.globals.squeeze()
+        # globals: (n_graphs, num_reward_components) -> drop only the graph axis so
+        # the component axis survives even when it happens to be size 1.
+        return crit.globals.reshape(self.num_reward_components)
 
 
 class PPOSeparate(nn.Module):

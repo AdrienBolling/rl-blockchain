@@ -168,8 +168,10 @@ def compute_gae(rewards, values, dones, last_value, gamma=0.99, lambda_=0.95):
         adv = delta + gamma * lambda_ * adv * (1 - d)
         return (adv, v), adv
 
+    # adv carry must match the reward shape: scalar for a single reward, (C,) once
+    # the critic is decomposed into C components. zeros_like(last_value) covers both.
     (_, _), advs = jax.lax.scan(
-        fn, (0.0, last_value), jnp.arange(values.shape[0] - 1)[::-1]
+        fn, (jnp.zeros_like(last_value), last_value), jnp.arange(values.shape[0] - 1)[::-1]
     )
     return advs[::-1]
 
@@ -232,11 +234,13 @@ def update_ppo(
         policy_loss = -jnp.minimum(ratio * adv, clipp_actor * adv)
         entropy = dist.entropy()  # TODO
 
+        # value_pred/ret/old_val are per-component vectors (one entry per reward
+        # head). Clip and score each head, then sum to a scalar value loss.
         value_pred_clipped = old_val + (value_pred - old_val).clip(
             -clip_ratio, clip_ratio)
         value_loss = jnp.square(value_pred - ret)
         value_loss_clipped = jnp.square(value_pred_clipped - ret)
-        value_loss = jnp.maximum(value_loss, value_loss_clipped)
+        value_loss = jnp.maximum(value_loss, value_loss_clipped).sum()
 
         total_loss = policy_loss + value_coef * value_loss - entropy * entropy_coef
 
@@ -492,7 +496,12 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
         infos_env_refined = log_fn(infos_env, rews, dones)
         wandb.log({"env": infos_env_refined}, step=env_step)
 
-    # Compute advantages and returns
+    # Decomposed advantage (Hybrid Reward Architecture): run GAE per reward
+    # component on its own critic head instead of on the single weighted scalar.
+    # The unweighted, post-filtered components already ride along in `infos_env`;
+    # order is [gini, distance], matching PPOCriticHead's output and rewards_weights.
+    rews_vec = jnp.stack([infos_env["gini_reward"], infos_env["distance_reward"]],
+                         axis=-1)  # (num_envs, num_steps, 2)
     advantages = jax.vmap(
         lambda r, v, d, last_value: compute_gae(
             r,
@@ -502,12 +511,20 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
             gamma,
             lambda_,
         )
-    )(rews, vals, dones, last_values)
-    returns = advantages + vals
+    )(rews_vec, vals, dones, last_values)  # (num_envs, num_steps, 2)
+    returns = advantages + vals  # per-head value targets, same shape
+
+    # Normalize EACH component to unit scale *before* weighting -- this is the crux:
+    # windowed gini moves the return ~1/horizon as much as distance, so on a shared
+    # scalar its advantage is ~800x smaller and invisible. Per-component whitening
+    # equalizes the scales, so `rewards_weights` [0.5, 0.5] means true equal priority.
+    comp_mean = advantages.mean(axis=(0, 1), keepdims=True)
+    comp_std = advantages.std(axis=(0, 1), keepdims=True)
+    advantages_comp = (advantages - comp_mean) / (comp_std + 1e-8)
+    weights = params_list.rewards_weights  # (num_envs, 2), normalized, order [gini, distance]
+    advantages_norm = (advantages_comp * weights[:, None, :]).sum(axis=-1)  # (num_envs, num_steps)
     if norm_advantage:
-        advantages_norm = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-    else:
-        advantages_norm = advantages
+        advantages_norm = (advantages_norm - advantages_norm.mean()) / (advantages_norm.std() + 1e-8)
 
     # Flatten data
     def flatten(x):
