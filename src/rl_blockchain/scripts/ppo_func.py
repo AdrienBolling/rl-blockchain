@@ -125,7 +125,8 @@ def train_ppo(ARGS: Namespace):
                                               env_step=env_step, value_coef=value_coef,
                                               entropy_coef=entropy_coef_fn(epoch),
                                               norm_advantage=norm_advantages,
-                                              micro_batch_size=getattr(ARGS, "micro_batch_size", None))
+                                              micro_batch_size=getattr(ARGS, "micro_batch_size", None),
+                                              gini_lambda=getattr(ARGS, "gini_lambda", 0.0))
             key, _ = jax.random.split(key)
             if epoch % ARGS.eval_interval == 0:
                 logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")

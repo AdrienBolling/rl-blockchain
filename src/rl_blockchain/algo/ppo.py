@@ -466,7 +466,8 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
                 env_step: int = 0, value_coef: jax.Array = jnp.float32(0.5),
                 entropy_coef: jax.Array = jnp.float32(0.01),
                 norm_advantage: bool = False,
-                micro_batch_size: Optional[int] = None) -> Tuple[PPOState, int]:
+                micro_batch_size: Optional[int] = None,
+                gini_lambda: float = 0.0) -> Tuple[PPOState, int]:
     """
     Perform one PPO training epoch using the provided hyperparameters.
     Returns the updated PPOState.
@@ -502,15 +503,17 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     # order is [gini, distance], matching PPOCriticHead's output and rewards_weights.
     rews_vec = jnp.stack([infos_env["gini_reward"], infos_env["distance_reward"]],
                          axis=-1)  # (num_envs, num_steps, 2)
+    # Per-component GAE lambda: the marginal gini reward (component 0) is per-step
+    # action-attributable, but the fairness target rotates, so a high lambda sums
+    # future-action noise and buries its signal -- lambda~0 gives a clean one-step
+    # advantage. Distance (component 1) keeps the usual lambda_. (measured: rel_gini
+    # 0.28->0.08 with gini_lambda=0 vs flat with 0.99.)
+    comp_lambdas = jnp.array([gini_lambda, lambda_], dtype=jnp.float32)
     advantages = jax.vmap(
-        lambda r, v, d, last_value: compute_gae(
-            r,
-            v,
-            d,
-            last_value,
-            gamma,
-            lambda_,
-        )
+        lambda r, v, d, last_value: jnp.stack(
+            [compute_gae(r[:, c], v[:, c], d, last_value[c], gamma, comp_lambdas[c])
+             for c in range(2)],
+            axis=-1)
     )(rews_vec, vals, dones, last_values)  # (num_envs, num_steps, 2)
     returns = advantages + vals  # per-head value targets, same shape
 

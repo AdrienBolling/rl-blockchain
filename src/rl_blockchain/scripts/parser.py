@@ -279,6 +279,16 @@ def _parse_args() -> Namespace:
         help="GAE lambda parameter. Default is 0.95.",
     )
     train_parser.add_argument(
+        "--gini-lambda",
+        type=float,
+        default=0.0,
+        help="GAE lambda for the gini (fairness) reward head only; distance keeps --lambda_. "
+             "The marginal gini reward is per-step action-attributable, so a high lambda sums "
+             "future-action noise (from the rotating fairness target) and buries its signal. "
+             "lambda=0 (default) gives a clean one-step advantage and is what makes fairness "
+             "learnable (measured: rel_gini 0.28 -> 0.08 vs flat at 0.99).",
+    )
+    train_parser.add_argument(
         "--clip-ratio",
         nargs="+",
         type=float,
