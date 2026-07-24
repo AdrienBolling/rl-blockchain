@@ -95,10 +95,44 @@ def distance_reward(action: jax.Array, state: EnvState, params: EnvParams, stati
     return post_filtered_reward, avg_delay
 
 
+def marginal_gini_reward(action: jax.Array, state: EnvState, params: EnvParams,
+                         static_params: StaticEnvParams) -> jax.Array:
+    """Per-step, fully action-attributable fairness reward.
+
+    The windowed ``gini_reward`` is a poor policy-gradient signal: one action
+    overwrites a single ring-history row, so its effect on the windowed gini is
+    smeared across the next ``horizon`` steps and its GAE advantage is dominated
+    by *other* steps' choices (measured: large advantage variance, tiny SNR w.r.t.
+    the current action). This reward instead scores *this* action alone: reward is
+    high when it selects the nodes that are currently the most under-represented in
+    the stake distribution -- exactly the choice that reduces long-run inequality.
+
+    reward = (picked - worst) / (best - worst) in [0, 1], where ``picked`` is the
+    total stake *deficit* (mean stake minus node stake) of the chosen nodes, and
+    best/worst are the deficits of the top-k / bottom-k nodes. k (=action.sum()) is
+    dynamic (ORN-UHL), so top-k/bottom-k are taken via a sorted-cumulative mask
+    rather than ``lax.top_k`` (which needs a static k).
+    """
+    d = get_stake_distribution(state)
+    deficit = jnp.mean(d) - d  # > 0 for under-represented nodes
+    k = action.sum()
+    idx = jnp.arange(deficit.shape[0])
+    desc = jnp.sort(deficit)[::-1]
+    asc = jnp.sort(deficit)
+    best = jnp.where(idx < k, desc, 0.0).sum()   # picking the k most under-represented
+    worst = jnp.where(idx < k, asc, 0.0).sum()   # picking the k most over-represented
+    picked = jnp.sum(action * deficit)
+    reward = jnp.clip((picked - worst) / (best - worst + 1e-8), 0.0, 1.0)
+    return reward
+
+
 @jax.jit
 def weighted_rewards(action: jax.Array, new_state: EnvState, params: EnvParams, static_params: StaticEnvParams) \
         -> tuple[jax.Array, Dict[str, jax.Array]]:
-    gini_reward_value, gini_value = gini_reward(new_state, params)
+    # Train the fairness head on the action-attributable marginal reward, but keep
+    # the true windowed relative gini as the monitored "gini" metric (unchanged).
+    _, gini_value = gini_reward(new_state, params)
+    gini_reward_value = marginal_gini_reward(action, new_state, params, static_params)
     distance_reward_value, avg_value = distance_reward(action, new_state, params, static_params)
     weighted_value = jnp.array([gini_reward_value, distance_reward_value]) * params.rewards_weights
     weighted_value_sum = weighted_value.sum()
