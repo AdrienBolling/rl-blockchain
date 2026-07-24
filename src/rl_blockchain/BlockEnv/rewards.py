@@ -95,8 +95,8 @@ def distance_reward(action: jax.Array, state: EnvState, params: EnvParams, stati
     return post_filtered_reward, avg_delay
 
 
-def marginal_gini_reward(action: jax.Array, state: EnvState, params: EnvParams,
-                         static_params: StaticEnvParams) -> jax.Array:
+def relative_stake_rank_reward(action: jax.Array, state: EnvState, params: EnvParams,
+                               static_params: StaticEnvParams) -> jax.Array:
     """Per-step, fully action-attributable fairness reward.
 
     The windowed ``gini_reward`` is a poor policy-gradient signal: one action
@@ -114,15 +114,15 @@ def marginal_gini_reward(action: jax.Array, state: EnvState, params: EnvParams,
     rather than ``lax.top_k`` (which needs a static k).
     """
     d = get_stake_distribution(state)
-    deficit = jnp.mean(d) - d  # > 0 for under-represented nodes
     k = action.sum()
-    idx = jnp.arange(deficit.shape[0])
-    desc = jnp.sort(deficit)[::-1]
-    asc = jnp.sort(deficit)
-    best = jnp.where(idx < k, desc, 0.0).sum()   # picking the k most under-represented
-    worst = jnp.where(idx < k, asc, 0.0).sum()   # picking the k most over-represented
-    picked = jnp.sum(action * deficit)
-    reward = jnp.clip((picked - worst) / (best - worst + 1e-8), 0.0, 1.0)
+    n = d.shape[0]
+    sorted_d = jnp.sort(d)
+    mask = jnp.arange(n) < k
+    min_sum = jnp.where(mask, sorted_d, 0.0).sum()
+    max_sum = jnp.where(mask, sorted_d[::-1], 0.0).sum()
+    picked_sum = jnp.sum(action * d)
+    reward = jnp.clip((max_sum - picked_sum) / (max_sum - min_sum + 1e-8), 0.0, 1.0, )
+
     return reward
 
 
@@ -132,7 +132,7 @@ def weighted_rewards(action: jax.Array, new_state: EnvState, params: EnvParams, 
     # Train the fairness head on the action-attributable marginal reward, but keep
     # the true windowed relative gini as the monitored "gini" metric (unchanged).
     _, gini_value = gini_reward(new_state, params)
-    gini_reward_value = marginal_gini_reward(action, new_state, params, static_params)
+    gini_reward_value = relative_stake_rank_reward(action, new_state, params, static_params)
     distance_reward_value, avg_value = distance_reward(action, new_state, params, static_params)
     weighted_value = jnp.array([gini_reward_value, distance_reward_value]) * params.rewards_weights
     weighted_value_sum = weighted_value.sum()
