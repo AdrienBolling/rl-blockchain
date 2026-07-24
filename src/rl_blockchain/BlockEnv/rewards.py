@@ -4,7 +4,8 @@ import jax
 import jax.numpy as jnp
 
 from rl_blockchain.BlockEnv.BlockchainGraph import gini_coefficient, gini_coefficient_worst
-from rl_blockchain.BlockEnv.state_params import EnvState, EnvParams, get_stake_distribution, StaticEnvParams
+from rl_blockchain.BlockEnv.state_params import EnvState, EnvParams, get_stake_distribution, StaticEnvParams, \
+    _get_stake_distribution_ring_history
 
 
 def _gen_post_filter(inflex_pts: float, inflex_value: float) -> Callable:
@@ -36,10 +37,14 @@ def gini_reward(state: EnvState, params: EnvParams) -> tuple[jax.Array, jax.Arra
     :param state: The current state of the environment.
     :param params: The environment parameters.
     """
-    sum_chosen_node_mean = state.ring_history.sum(axis=1).mean()
-    nb_nodes = state.ring_history.shape[1]
+    return _gini_reward_ring_history(state.ring_history)
 
-    stake_distribution = get_stake_distribution(state)
+
+def _gini_reward_ring_history(ring_history: jax.Array) -> tuple[jax.Array, jax.Array]:
+    sum_chosen_node_mean = ring_history.sum(axis=1).mean()
+    nb_nodes = ring_history.shape[1]
+
+    stake_distribution = _get_stake_distribution_ring_history(ring_history)
     current_gini = gini_coefficient(stake_distribution)
     worst_gini = gini_coefficient_worst(sum_chosen_node_mean, nb_nodes)
 
@@ -145,6 +150,50 @@ def differential_gini_reward(old_state: EnvState, new_state: EnvState, params: E
     return g_old - g_new
 
 
+def new_gini_relative(action: jax.Array, previous_state: EnvState) -> tuple[jax.Array, jax.Array]:
+    """
+    Compute the new relative gini coefficient after taking an action.
+    :param action: The list of chosen nodes (1 for chosen, 0 for not chosen).
+    :param previous_state: The current state of the environment.
+    :return: The new relative gini coefficient.
+    """
+    horizon, nb_nodes = previous_state.ring_history.shape[0], previous_state.ring_history.shape[1]
+    current_index = previous_state.time % horizon
+    new_ring_history = previous_state.ring_history.at[current_index, :].set(action)
+
+    new_gini = _gini_reward_ring_history(new_ring_history)
+
+    return new_gini
+
+
+def gini_grad_reward(action: jax.Array, previous_state: EnvState) -> jax.Array:
+    """Autodiff fairness reward: ``jax.grad`` of ``new_gini_relative`` w.r.t. the action.
+
+    Differentiates the *new* windowed relative gini with respect to the action only.
+    The action is written into a **float** copy of the ring buffer first: the stored
+    buffer is boolean, so setting a float row would cast to bool and make the gradient
+    identically zero -- the float relaxation is what makes the sort/cumsum in the gini
+    differentiable. Then ``g_j = d relative_gini / d action_j`` is the marginal effect
+    of including node ``j`` on the windowed inequality.
+
+    Lower gini is better, so the reward is ``-<action, g>``: positive when the chosen
+    nodes are the ones whose inclusion *decreases* inequality (a smooth, first-order
+    cousin of ``relative_stake_rank_reward``). Fully attributable to this action; no
+    clip / post-filter (the decomposed critic whitens the component's advantage).
+    """
+    horizon = previous_state.ring_history.shape[0]
+    current_index = previous_state.time % horizon
+    ring_float = previous_state.ring_history.astype(jnp.float32)
+
+    def relative_gini_of_action(a: jax.Array) -> jax.Array:
+        # mirrors new_gini_relative, but on a float ring so the gradient flows
+        new_ring = ring_float.at[current_index, :].set(a)
+        return _gini_reward_ring_history(new_ring)[1]  # relative_gini scalar
+
+    grad = jax.grad(relative_gini_of_action)(action.astype(jnp.float32))
+    return -jnp.sum(action * grad)
+
+
 @jax.jit
 def weighted_rewards(action: jax.Array, old_state: EnvState, new_state: EnvState, params: EnvParams,
                      static_params: StaticEnvParams) -> tuple[jax.Array, Dict[str, jax.Array]]:
@@ -152,23 +201,43 @@ def weighted_rewards(action: jax.Array, old_state: EnvState, new_state: EnvState
     # fairness *training* signal is selected by static_params.gini_reward_mode:
     #   "rank"         -> per-step action-attributable stake-rank surrogate (default)
     #   "differential" -> potential-based per-step decrease of the true windowed gini
-    _, gini_value = gini_reward(new_state, params)
+    #   "windowed"     -> the original level reward (1 - relative_gini, post-filtered);
+    #                     integrative, so needs --gini-lambda 0 to learn
+    #   "grad"         -> jax.grad of the new relative gini w.r.t. the action
+    # Original windowed gini level reward (1 - relative_gini, post-filtered) + the
+    # monitored relative gini. Logged regardless of mode so runs stay comparable.
+    original_gini_reward, gini_value = gini_reward(new_state, params)
+    # Fairness *training* signal fed to the gini head (mode-dependent).
     if static_params.gini_reward_mode == "differential":
-        gini_reward_value = differential_gini_reward(old_state, new_state, params)
+        fairness_reward_value = differential_gini_reward(old_state, new_state, params)
+    elif static_params.gini_reward_mode == "windowed":
+        fairness_reward_value = original_gini_reward
+    elif static_params.gini_reward_mode == "grad":
+        fairness_reward_value = gini_grad_reward(action, old_state)
     else:
-        gini_reward_value = relative_stake_rank_reward(action, new_state, params, static_params)
+        fairness_reward_value = relative_stake_rank_reward(action, new_state, params, static_params)
     distance_reward_value, avg_value = distance_reward(action, new_state, params, static_params)
-    weighted_value = jnp.array([gini_reward_value, distance_reward_value]) * params.rewards_weights
-    weighted_value_sum = weighted_value.sum()
-    return weighted_value_sum, {"gini": gini_value, "gini_reward": gini_reward_value, "distance": avg_value,
-                                "distance_reward": distance_reward_value, "weighted_reward": weighted_value_sum}
+    # The optimized reward uses the fairness training signal.
+    weighted_value_sum = (jnp.array([fairness_reward_value, distance_reward_value]) * params.rewards_weights).sum()
+    # Same weighting but with the ORIGINAL windowed gini -- monitoring only, comparable
+    # across gini_reward_mode.
+    weighted_original_sum = (jnp.array([original_gini_reward, distance_reward_value]) * params.rewards_weights).sum()
+    return weighted_value_sum, {"gini": gini_value,
+                                "fairness_reward": fairness_reward_value,
+                                "gini_reward": original_gini_reward,
+                                "distance": avg_value,
+                                "distance_reward": distance_reward_value,
+                                "weighted_reward": weighted_value_sum,
+                                "weighted_original_reward": weighted_original_sum}
 
 
 def null_reward() -> tuple[jax.Array, Dict[str, jax.Array]]:
     return jnp.array(0.0, dtype=jnp.float32), {
         "gini": jnp.array(0, dtype=jnp.float32),
+        "fairness_reward": jnp.array(0, dtype=jnp.float32),
         "gini_reward": jnp.array(0, dtype=jnp.float32),
         "distance": jnp.array(0, dtype=jnp.float32),
         "distance_reward": jnp.array(0, dtype=jnp.float32),
-        "weighted_reward": jnp.array(0, dtype=jnp.float32)
+        "weighted_reward": jnp.array(0, dtype=jnp.float32),
+        "weighted_original_reward": jnp.array(0, dtype=jnp.float32)
     }

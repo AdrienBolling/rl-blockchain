@@ -27,8 +27,8 @@ Next_map_fn = Callable[[jax.Array, "EnvState", "EnvParams"], jax.Array]
 
 @struct.dataclass
 class Speeders:
-    senders : jax.Array
-    receivers : jax.Array
+    senders: jax.Array
+    receivers: jax.Array
     unique: jax.Array
     inverse: jax.Array
 
@@ -245,14 +245,18 @@ class EnvParams(environment.EnvParams):
         return cls.create(adj_mat, rewards_weights, max_steps)
 
 
-@jax.jit
-def get_stake_distribution(state: EnvState) -> jax.Array:
-    nb_nodes = state.ring_history.shape[1]
-    list_nb_val = jnp.sum(state.ring_history, axis=1).astype(jnp.float32)  # shape (rounds,)
+def _get_stake_distribution_ring_history(ring_history: jax.Array) -> jax.Array:
+    nb_nodes = ring_history.shape[1]
+    list_nb_val = jnp.sum(ring_history, axis=1).astype(jnp.float32)  # shape (rounds,)
     stake = nb_nodes / list_nb_val  # shape (rounds,)
-    history_stake = state.ring_history * stake[:, None]  # broadcasting over columns
+    history_stake = ring_history * stake[:, None]  # broadcasting over columns
     stake_distribution = jnp.sum(history_stake, axis=0)  # shape (nodes,)
     return stake_distribution
+
+
+@jax.jit
+def get_stake_distribution(state: EnvState) -> jax.Array:
+    return _get_stake_distribution_ring_history(state.ring_history)
 
 
 @jax.jit

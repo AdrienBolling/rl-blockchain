@@ -74,10 +74,12 @@ def test_step_with_legal_action_returns_valid_transition():
 
     expected_info_keys = {
         "gini",
+        "fairness_reward",
         "gini_reward",
         "distance",
         "distance_reward",
         "weighted_reward",
+        "weighted_original_reward",
         "nb_validators",
     }
     assert set(info.keys()) == expected_info_keys
@@ -95,6 +97,8 @@ def test_illegal_action_ends_episode_and_returns_null_reward():
     assert bool(done) is True
     assert float(reward) == 0.0
     assert float(info["weighted_reward"]) == 0.0
+    assert float(info["weighted_original_reward"]) == 0.0
+    assert float(info["fairness_reward"]) == 0.0
     assert float(info["gini_reward"]) == 0.0
     assert float(info["distance_reward"]) == 0.0
 

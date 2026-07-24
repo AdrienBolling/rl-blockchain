@@ -197,13 +197,14 @@ def _parse_args() -> Namespace:
     )
     ppo_parser.add_argument(
         "--gini-reward-mode",
-        choices=["rank", "differential"],
-        default="rank",
-        help="Fairness training signal for the gini head. 'rank' (default): per-step "
+        choices=["rank", "differential", "windowed", "grad"],
+        default="windowed",
+        help="Fairness training signal for the gini head. 'rank': per-step "
              "action-attributable stake-rank surrogate. 'differential': potential-based "
-             "per-step decrease of the true windowed gini (G_t - G_{t+1}); optimizes the "
-             "real windowed gini, GAE re-integrates it. The monitored env/gini metric is "
-             "the true windowed gini either way.",
+             "per-step decrease of the true windowed gini (G_t - G_{t+1}); GAE re-integrates "
+             "it. 'windowed' (default): the original level reward (1 - relative_gini) -- integrative, "
+             "needs --gini-lambda 0. 'grad': jax.grad of the new relative gini w.r.t. the "
+             "action. The monitored env/gini metric is the true windowed gini in all cases.",
     )
     ppo_parser.add_argument(
         "--gat-arch",

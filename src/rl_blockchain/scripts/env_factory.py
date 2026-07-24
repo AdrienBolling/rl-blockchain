@@ -207,7 +207,8 @@ class EnvBuilder(abc.ABC):
 
 
 def compute_avg_value(infos: dict[str, jax.Array]) -> dict[str, jax.Array]:
-    infos_keys = ["gini", "distance", "gini_reward", "distance_reward", "weighted_reward", "nb_validators"]
+    infos_keys = ["gini", "distance", "gini_reward", "fairness_reward", "distance_reward",
+                  "weighted_reward", "weighted_original_reward", "nb_validators"]
     returned_infos = {}
     for key in infos_keys:
         returned_infos[key] = infos[key].mean()

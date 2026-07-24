@@ -499,9 +499,10 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
 
     # Decomposed advantage (Hybrid Reward Architecture): run GAE per reward
     # component on its own critic head instead of on the single weighted scalar.
-    # The unweighted, post-filtered components already ride along in `infos_env`;
-    # order is [gini, distance], matching PPOCriticHead's output and rewards_weights.
-    rews_vec = jnp.stack([infos_env["gini_reward"], infos_env["distance_reward"]],
+    # The unweighted components already ride along in `infos_env`; order is
+    # [fairness, distance], matching PPOCriticHead's output and rewards_weights.
+    # "fairness_reward" is the mode-selected gini training signal (see weighted_rewards).
+    rews_vec = jnp.stack([infos_env["fairness_reward"], infos_env["distance_reward"]],
                          axis=-1)  # (num_envs, num_steps, 2)
     # Per-component GAE lambda: the marginal gini reward (component 0) is per-step
     # action-attributable, but the fairness target rotates, so a high lambda sums
