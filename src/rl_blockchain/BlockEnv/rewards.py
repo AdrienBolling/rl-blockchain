@@ -126,13 +126,37 @@ def relative_stake_rank_reward(action: jax.Array, state: EnvState, params: EnvPa
     return reward
 
 
+def differential_gini_reward(old_state: EnvState, new_state: EnvState, params: EnvParams) -> jax.Array:
+    """Potential-based fairness reward: the per-step DECREASE in windowed relative gini.
+
+    Potential ``Phi(s) = -relative_gini(s)``; the reward is ``Phi(new) - Phi(old) =
+    G(old) - G(new)`` (>0 when the action made the committee window fairer). The
+    windowed gini is itself a temporal integral over ``horizon`` rounds, so rewarding
+    its *level* makes GAE integrate twice (which is why the level reward only learned
+    at lambda=0). Differencing turns it back into a proper per-step increment: GAE
+    re-integrates it (the discounted sum telescopes to ``G_0 - G_T``), so this
+    optimizes the *true* windowed gini rather than a proxy, while being fully
+    attributable to the current action -- the only thing that changed between old and
+    new. No clip / post-filter: the decomposed critic whitens each component's
+    advantage, so the (small, signed) scale is handled automatically.
+    """
+    g_old = gini_reward(old_state, params)[1]  # relative_gini before the action
+    g_new = gini_reward(new_state, params)[1]  # relative_gini after the action
+    return g_old - g_new
+
+
 @jax.jit
-def weighted_rewards(action: jax.Array, new_state: EnvState, params: EnvParams, static_params: StaticEnvParams) \
-        -> tuple[jax.Array, Dict[str, jax.Array]]:
-    # Train the fairness head on the action-attributable marginal reward, but keep
-    # the true windowed relative gini as the monitored "gini" metric (unchanged).
+def weighted_rewards(action: jax.Array, old_state: EnvState, new_state: EnvState, params: EnvParams,
+                     static_params: StaticEnvParams) -> tuple[jax.Array, Dict[str, jax.Array]]:
+    # Monitored metric is always the true windowed relative gini (unchanged). The
+    # fairness *training* signal is selected by static_params.gini_reward_mode:
+    #   "rank"         -> per-step action-attributable stake-rank surrogate (default)
+    #   "differential" -> potential-based per-step decrease of the true windowed gini
     _, gini_value = gini_reward(new_state, params)
-    gini_reward_value = relative_stake_rank_reward(action, new_state, params, static_params)
+    if static_params.gini_reward_mode == "differential":
+        gini_reward_value = differential_gini_reward(old_state, new_state, params)
+    else:
+        gini_reward_value = relative_stake_rank_reward(action, new_state, params, static_params)
     distance_reward_value, avg_value = distance_reward(action, new_state, params, static_params)
     weighted_value = jnp.array([gini_reward_value, distance_reward_value]) * params.rewards_weights
     weighted_value_sum = weighted_value.sum()

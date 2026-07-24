@@ -196,6 +196,16 @@ def _parse_args() -> Namespace:
         help="Weights for the rewards as space separated values. Default is [0.5, 0.5].",
     )
     ppo_parser.add_argument(
+        "--gini-reward-mode",
+        choices=["rank", "differential"],
+        default="rank",
+        help="Fairness training signal for the gini head. 'rank' (default): per-step "
+             "action-attributable stake-rank surrogate. 'differential': potential-based "
+             "per-step decrease of the true windowed gini (G_t - G_{t+1}); optimizes the "
+             "real windowed gini, GAE re-integrates it. The monitored env/gini metric is "
+             "the true windowed gini either way.",
+    )
+    ppo_parser.add_argument(
         "--gat-arch",
         nargs="+",
         type=int,

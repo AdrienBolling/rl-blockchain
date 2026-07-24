@@ -105,6 +105,11 @@ class StaticEnvParams:
     box_clip = _box_clip  # Clip value for node features
 
     horizon: int = 200
+    # Which fairness training signal weighted_rewards feeds the gini head:
+    # "rank" (action-attributable stake-rank surrogate) or "differential" (per-step
+    # decrease of the true windowed gini, potential-based). Static so it can drive a
+    # trace-time branch inside the jitted weighted_rewards.
+    gini_reward_mode: str = struct.field(pytree_node=False, default="rank")
     node_features = ["distrib_chosen", "chosen"]
 
     rewards = ["gini", "distance"]
@@ -114,7 +119,8 @@ class StaticEnvParams:
                init_nb_val_fn: Init_nb_val_fn,
                next_nb_val_fn: Next_nb_val_fn,
                next_map_fn: Next_map_fn,
-               horizon: int = 200) -> 'StaticEnvParams':
+               horizon: int = 200,
+               gini_reward_mode: str = "rank") -> 'StaticEnvParams':
         min_max_array = load_min_max_array(filename)
         avg_distance = min_max_array[nb_nodes][0]
         return cls(
@@ -126,7 +132,8 @@ class StaticEnvParams:
             nb_nodes=nb_nodes,
             distance_opt_array=min_max_array,
             avg_distance=avg_distance.item(),
-            horizon=horizon
+            horizon=horizon,
+            gini_reward_mode=gini_reward_mode
         )
 
 

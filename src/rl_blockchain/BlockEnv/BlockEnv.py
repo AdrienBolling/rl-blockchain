@@ -176,11 +176,11 @@ class BlockchainEnv(environment.Environment[EnvState, EnvParams]):
         is_illegal_action = action.sum() != state.nb_val
         done = jnp.logical_or(self.is_terminal(new_state, params), is_illegal_action)
 
-        operand_reward = (action, new_state, params, self._static_params)
+        operand_reward = (action, state, new_state, params, self._static_params)
         reward, info = jax.lax.cond(
             is_illegal_action,
             lambda tup: null_reward(),
-            lambda tup: weighted_rewards(tup[0], tup[1], tup[2], tup[3]),
+            lambda tup: weighted_rewards(tup[0], tup[1], tup[2], tup[3], tup[4]),
             operand_reward
         )
         reward_multiplied = reward
