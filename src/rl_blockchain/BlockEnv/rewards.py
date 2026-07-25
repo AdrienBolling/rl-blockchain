@@ -150,47 +150,36 @@ def differential_gini_reward(old_state: EnvState, new_state: EnvState, params: E
     return g_old - g_new
 
 
-def new_gini_relative(action: jax.Array, previous_state: EnvState) -> tuple[jax.Array, jax.Array]:
-    """
-    Compute the new relative gini coefficient after taking an action.
-    :param action: The list of chosen nodes (1 for chosen, 0 for not chosen).
-    :param previous_state: The current state of the environment.
-    :return: The new relative gini coefficient.
-    """
-    horizon, nb_nodes = previous_state.ring_history.shape[0], previous_state.ring_history.shape[1]
-    current_index = previous_state.time % horizon
-    new_ring_history = previous_state.ring_history.at[current_index, :].set(action)
+def _relative_gini_of_row(row: jax.Array, ring_float: jax.Array, current_index: jax.Array) -> jax.Array:
+    """Windowed ``relative_gini`` after writing ``row`` into a FLOAT ring buffer.
 
-    new_gini = _gini_reward_ring_history(new_ring_history)
+    The stored ``ring_history`` is boolean; ``jax.grad`` of ``new_gini_relative`` would
+    be identically zero because the float->bool ``.set`` cast has a zero JVP. Operating
+    on ``ring_float`` (a float copy) keeps the sort/cumsum path differentiable so the
+    marginal effect of each node flows through.
+    """
+    new_ring = ring_float.at[current_index, :].set(row)
+    return _gini_reward_ring_history(new_ring)[1]  # relative_gini scalar
 
-    return new_gini
+
+# grad w.r.t. the row (argnums=0) built ONCE at import: it is a trace-time transform,
+# not a jit cache entry, so this avoids re-creating the transformed function per call.
+_relative_gini_grad = jax.grad(_relative_gini_of_row, argnums=0)
 
 
 def gini_grad_reward(action: jax.Array, previous_state: EnvState) -> jax.Array:
-    """Autodiff fairness reward: ``jax.grad`` of ``new_gini_relative`` w.r.t. the action.
+    """Autodiff fairness reward: ``jax.grad`` of the new windowed relative gini w.r.t. the action.
 
-    Differentiates the *new* windowed relative gini with respect to the action only.
-    The action is written into a **float** copy of the ring buffer first: the stored
-    buffer is boolean, so setting a float row would cast to bool and make the gradient
-    identically zero -- the float relaxation is what makes the sort/cumsum in the gini
-    differentiable. Then ``g_j = d relative_gini / d action_j`` is the marginal effect
-    of including node ``j`` on the windowed inequality.
-
-    Lower gini is better, so the reward is ``-<action, g>``: positive when the chosen
-    nodes are the ones whose inclusion *decreases* inequality (a smooth, first-order
-    cousin of ``relative_stake_rank_reward``). Fully attributable to this action; no
-    clip / post-filter (the decomposed critic whitens the component's advantage).
+    ``g_j = d relative_gini / d action_j`` is the marginal effect of including node ``j``
+    on the windowed inequality (see :func:`_relative_gini_of_row` for the float relaxation
+    that makes this non-zero). Lower gini is better, so the reward is ``-<action, g>``:
+    positive when the chosen nodes are the ones whose inclusion *decreases* inequality
+    (a smooth, first-order cousin of ``relative_stake_rank_reward``). Fully attributable
+    to this action; no clip / post-filter (the decomposed critic whitens the advantage).
     """
-    horizon = previous_state.ring_history.shape[0]
-    current_index = previous_state.time % horizon
+    current_index = previous_state.time % previous_state.ring_history.shape[0]
     ring_float = previous_state.ring_history.astype(jnp.float32)
-
-    def relative_gini_of_action(a: jax.Array) -> jax.Array:
-        # mirrors new_gini_relative, but on a float ring so the gradient flows
-        new_ring = ring_float.at[current_index, :].set(a)
-        return _gini_reward_ring_history(new_ring)[1]  # relative_gini scalar
-
-    grad = jax.grad(relative_gini_of_action)(action.astype(jnp.float32))
+    grad = _relative_gini_grad(action.astype(jnp.float32), ring_float, current_index)
     return -jnp.sum(action * grad)
 
 

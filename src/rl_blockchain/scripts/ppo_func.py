@@ -8,6 +8,7 @@ import flax
 import jax
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
+import pandas as pd
 import wandb
 from gymnax.environments.environment import TEnvParams, Environment
 from tqdm import tqdm
@@ -18,7 +19,7 @@ from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, 
     latest_checkpoint_step, make_optimizer
 from rl_blockchain.algo.ppo import eval_ppo
 from rl_blockchain.scripts.env_factory import GenericEnvFactory, LOG_TYPE
-from rl_blockchain.utils.run_config import apply_model_config, save_run_config
+from rl_blockchain.utils.run_config import apply_model_config, save_run_config, load_run_config
 from rl_blockchain.utils.run_counter import project_dir
 
 logger = logging.getLogger(__name__)
@@ -213,21 +214,52 @@ def eval_ppo_run(args: Namespace):
 
     # Write the aggregate results to JSON (same spirit as simple_eval): no wandb.
     checkpoint_name = chkpt_dir.resolve().name
+    # Pull the training-time labels from the saved run config so rows are correctly
+    # tagged by mode/lambda regardless of what was passed on the eval command line.
+    saved_cfg = load_run_config(chkpt_dir)
+    gini_reward_mode = saved_cfg.get("gini_reward_mode", getattr(args, "gini_reward_mode", None))
+    gini_lambda = saved_cfg.get("gini_lambda", getattr(args, "gini_lambda", None))
+    reward_weights = [float(w) for w in args.reward_weights]
+
+    metrics_f = {k: float(v) for k, v in metrics.items()}
     results = {
         "model": checkpoint_name,
         "checkpoint_dir": str(chkpt_dir.resolve()),
         "checkpoint_step": args.checkpoint_step,  # None => latest
+        "gini_reward_mode": gini_reward_mode,
+        "gini_lambda": gini_lambda,
         "seed": args.seed,
         "num_episodes": args.eval_episodes,
         "n_nodes": args.n_nodes,
         "horizon": getattr(args, "horizon", 200),
-        "reward_weights": [float(w) for w in args.reward_weights],
-        # Every aggregate metric eval_ppo produced (gini, distance, *_reward,
-        # nb_validators, avg_returns_episode, reward_0..4, ...).
-        "metrics": {k: float(v) for k, v in metrics.items()},
+        "reward_weights": reward_weights,
+        # Every aggregate metric eval_ppo produced. The mode-INDEPENDENT comparables
+        # across runs are `gini`, `distance` and `weighted_original_reward`; the
+        # mode-dependent `fairness_reward`/`weighted_reward` are only meaningful within
+        # a single mode.
+        "metrics": metrics_f,
     }
 
     out_path = args.output or pathlib.Path(f"eval_{checkpoint_name}.json")
     out_path.write_text(json.dumps(results, indent=2))
+
+    # Also emit a one-row CSV (flat) so the 12 runs concat/merge trivially in pandas:
+    #   pd.concat([pd.read_csv(f) for f in glob("eval_*.csv")])
+    row = {
+        "model": checkpoint_name,
+        "gini_reward_mode": gini_reward_mode,
+        "gini_lambda": gini_lambda,
+        "reward_weight_gini": reward_weights[0] if len(reward_weights) > 0 else None,
+        "reward_weight_distance": reward_weights[1] if len(reward_weights) > 1 else None,
+        "seed": args.seed,
+        "n_nodes": args.n_nodes,
+        "horizon": getattr(args, "horizon", 200),
+        "num_episodes": args.eval_episodes,
+        "checkpoint_step": args.checkpoint_step,
+        **metrics_f,
+    }
+    csv_path = out_path.with_suffix(".csv")
+    pd.DataFrame([row]).to_csv(csv_path, index=False)
+
     logger.info(metrics)
-    print(f"Results written to {out_path.resolve()}")
+    print(f"Results written to {out_path.resolve()} and {csv_path.resolve()}")

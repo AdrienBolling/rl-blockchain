@@ -26,6 +26,7 @@ CONFIG_FILENAME = "run_config.json"
 MODEL_CONFIG_KEYS = (
     "env", "n_nodes", "gat_arch", "voting_nodes", "reward_weights",
     "update_params", "next_edge_type", "ref_map_file", "horizon",
+    "gini_reward_mode",
 )
 
 _ENUM_KEYS = {"update_params": UpdateValStrat, "next_edge_type": UpdateDistStrat}
@@ -46,6 +47,19 @@ def save_run_config(chkpt_dir: Union[str, pathlib.Path], args: Namespace) -> pat
     payload = {k: _jsonable(v) for k, v in vars(args).items()}
     path.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str))
     return path
+
+
+def load_run_config(chkpt_dir: Union[str, pathlib.Path]) -> dict:
+    """Return the raw saved run config dict, or ``{}`` if the run predates this file.
+
+    Unlike :func:`apply_model_config` (which only restores the model/env subset onto
+    ``args``), this exposes *every* saved training flag -- useful for labelling eval
+    outputs with things like ``gini_lambda`` that don't rebuild the model.
+    """
+    path = pathlib.Path(chkpt_dir) / CONFIG_FILENAME
+    if not path.is_file():
+        return {}
+    return json.loads(path.read_text())
 
 
 def apply_model_config(args: Namespace, chkpt_dir: Union[str, pathlib.Path]) -> bool:
