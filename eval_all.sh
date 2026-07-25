@@ -63,17 +63,27 @@ merged = out_dir / "comparison.csv"
 df.to_csv(merged, index=False)
 print(f"\nMerged {len(files)} run(s) -> {merged}\n")
 
+# Cell-identifying dimensions, in sort/group order (only those actually present).
+dims = [c for c in ("gini_reward_mode", "horizon", "gini_lambda") if c in df.columns]
 metrics = [c for c in ("gini", "distance", "weighted_original_reward") if c in df.columns]
-have = [c for c in ("gini_reward_mode", "gini_lambda") if c in df.columns]
-if have and metrics:
-    view = (df[[*have, *metrics]]
-            .sort_values(have)
-            .reset_index(drop=True))
-    with pd.option_context("display.width", 200, "display.max_columns", None):
+
+if dims and metrics:
+    view = df[[*dims, *metrics]].sort_values(dims).reset_index(drop=True)
+    with pd.option_context("display.width", 220, "display.max_columns", None):
         print("Comparison (lower gini & lower distance = better):\n")
         print(view.to_string(index=False))
-    if {"gini_reward_mode", "gini_lambda"}.issubset(df.columns):
-        print("\nPivot: gini by mode x gini_lambda\n")
-        print(df.pivot_table(index="gini_reward_mode", columns="gini_lambda",
-                             values="gini").to_string())
+
+    # One pivot per metric: rows = (mode, horizon), columns = gini_lambda.
+    row_dims = [c for c in ("gini_reward_mode", "horizon") if c in df.columns]
+    if "gini_lambda" in df.columns and row_dims:
+        for m in metrics:
+            print(f"\nPivot: {m}  ({' x '.join(row_dims)})  x  gini_lambda\n")
+            print(df.pivot_table(index=row_dims, columns="gini_lambda", values=m).to_string())
+
+    if df.get("horizon") is not None and df["horizon"].nunique() > 1:
+        print("\nNOTE: gini is worst-normalized, but its *meaning* changes with horizon "
+              "(the fairness-window length), so gini is NOT directly comparable across "
+              "horizons -- choose horizon by the fairness timescale you want, then compare "
+              "gini_lambda *within* a horizon. distance / weighted_original_reward are "
+              "comparable across horizons.")
 PY
