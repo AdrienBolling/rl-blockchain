@@ -58,6 +58,8 @@ def train_ppo(ARGS: Namespace):
     lr_fn = make_fct_value_array(ARGS.learning_rate, num_epochs)
     gamma = ARGS.gamma
     lambda_ = ARGS.lambda_
+    # None means "no separate schedule": the gini head reuses the general GAE lambda.
+    gini_lambda = ARGS.gini_lambda if ARGS.gini_lambda is not None else lambda_
     norm_advantages = not ARGS.no_norm_advantages
     clip_ratio_fn = make_fct_value(ARGS.clip_ratio, num_epochs)
     value_coef = jnp.float32(ARGS.value_coef)
@@ -127,7 +129,7 @@ def train_ppo(ARGS: Namespace):
                                               entropy_coef=entropy_coef_fn(epoch),
                                               norm_advantage=norm_advantages,
                                               micro_batch_size=getattr(ARGS, "micro_batch_size", None),
-                                              gini_lambda=getattr(ARGS, "gini_lambda", 0.0))
+                                              gini_lambda=gini_lambda)
             key, _ = jax.random.split(key)
             if epoch % ARGS.eval_interval == 0:
                 logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")
@@ -219,6 +221,10 @@ def eval_ppo_run(args: Namespace):
     saved_cfg = load_run_config(chkpt_dir)
     gini_reward_mode = saved_cfg.get("gini_reward_mode", getattr(args, "gini_reward_mode", None))
     gini_lambda = saved_cfg.get("gini_lambda", getattr(args, "gini_lambda", None))
+    # None means the gini head reused the general lambda at train time; surface the
+    # effective value so the comparison table never shows a bare None.
+    if gini_lambda is None:
+        gini_lambda = saved_cfg.get("lambda_", getattr(args, "lambda_", None))
     reward_weights = [float(w) for w in args.reward_weights]
 
     metrics_f = {k: float(v) for k, v in metrics.items()}

@@ -198,11 +198,11 @@ def _parse_args() -> Namespace:
     ppo_parser.add_argument(
         "--gini-reward-mode",
         choices=["rank", "differential", "windowed", "grad"],
-        default="windowed",
+        default="differential",
         help="Fairness training signal for the gini head. 'rank': per-step "
-             "action-attributable stake-rank surrogate. 'differential': potential-based "
+             "action-attributable stake-rank surrogate. 'differential' (default): potential-based "
              "per-step decrease of the true windowed gini (G_t - G_{t+1}); GAE re-integrates "
-             "it. 'windowed' (default): the original level reward (1 - relative_gini) -- integrative, "
+             "it. 'windowed': the original level reward (1 - relative_gini) -- integrative, "
              "needs --gini-lambda 0. 'grad': jax.grad of the new relative gini w.r.t. the "
              "action. The monitored env/gini metric is the true windowed gini in all cases.",
     )
@@ -292,12 +292,14 @@ def _parse_args() -> Namespace:
     train_parser.add_argument(
         "--gini-lambda",
         type=float,
-        default=0.0,
+        default=None,
         help="GAE lambda for the gini (fairness) reward head only; distance keeps --lambda_. "
-             "The marginal gini reward is per-step action-attributable, so a high lambda sums "
-             "future-action noise (from the rotating fairness target) and buries its signal. "
-             "lambda=0 (default) gives a clean one-step advantage and is what makes fairness "
-             "learnable (measured: rel_gini 0.28 -> 0.08 vs flat at 0.99).",
+             "Default None: the gini head reuses --lambda_ (single-lambda GAE). Set it "
+             "explicitly to decouple the heads. The marginal gini reward is per-step "
+             "action-attributable, so a high lambda sums future-action noise (from the "
+             "rotating fairness target) and buries its signal; lambda=0 gives a clean "
+             "one-step advantage that makes fairness learnable (measured: rel_gini "
+             "0.28 -> 0.08 vs flat at 0.99).",
     )
     train_parser.add_argument(
         "--clip-ratio",
