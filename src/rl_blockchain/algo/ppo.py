@@ -530,6 +530,23 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     if norm_advantage:
         advantages_norm = (advantages_norm - advantages_norm.mean()) / (advantages_norm.std() + 1e-8)
 
+    # Decomposed-critic diagnostics (order [gini, distance]). The *raw* per-component
+    # advantage std is the key one for the fairness head: with a differential reward
+    # it shrinks toward 0 as the policy stabilizes, and whitening then divides ~0 by
+    # ~0, so the fairness advantage degrades into amplified noise -- watch adv_std_gini
+    # collapse relative to adv_std_distance to see the fairness signal vanish. The value
+    # means show each head's learned return level.
+    if log_fn is not None:
+        value_mean = vals.mean(axis=(0, 1))   # (2,) [gini, distance]
+        adv_std = comp_std.reshape(2)         # (2,) pre-whitening, [gini, distance]
+        wandb.log({"decomp": {
+            "value_mean_gini": value_mean[0],
+            "value_mean_distance": value_mean[1],
+            "adv_std_gini": adv_std[0],
+            "adv_std_distance": adv_std[1],
+            "adv_std_ratio_gini_over_distance": adv_std[0] / (adv_std[1] + 1e-8),
+        }}, step=env_step)
+
     # Flatten data
     def flatten(x):
         return x.reshape(-1, *x.shape[2:])
@@ -670,6 +687,11 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
 
     metrics = log_fn(all_infos, all_rewards, all_dones)
     metrics["avg_returns_episode"] = all_rewards.sum(axis=1).mean()
+    # Undiscounted per-episode sum of the fairness signal. For the differential mode
+    # this telescopes to G_0 - G_T (the net windowed-gini decrease over the episode),
+    # which -- unlike the per-step mean (~0 at any stationary policy) -- is directly
+    # interpretable. For the other modes it is just the episode total.
+    metrics["fairness_reward_episodic_sum"] = all_infos["fairness_reward"].sum(axis=1).mean()
 
     sub_rewards = all_rewards.mean(axis=1)
     for i in range(min(recorded_episodes, num_episodes)):

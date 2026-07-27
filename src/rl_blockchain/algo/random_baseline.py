@@ -98,4 +98,8 @@ def eval_random(env: environment.Environment, key: jax.Array,
 
     metrics = log_fn(all_infos, all_rewards, all_dones)
     metrics["avg_returns_episode"] = all_rewards.sum(axis=1).mean()
+    # Same episodic-sum diagnostic as eval_ppo: for a differential fairness signal it
+    # telescopes to G_0 - G_T. A stationary random policy neither improves nor degrades
+    # fairness, so this sits ~0 -- the reference value for "no net fairness change".
+    metrics["fairness_reward_episodic_sum"] = all_infos["fairness_reward"].sum(axis=1).mean()
     return metrics
