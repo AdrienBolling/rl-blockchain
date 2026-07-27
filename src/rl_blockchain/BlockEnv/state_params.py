@@ -110,6 +110,10 @@ class StaticEnvParams:
     # decrease of the true windowed gini, potential-based). Static so it can drive a
     # trace-time branch inside the jitted weighted_rewards.
     gini_reward_mode: str = struct.field(pytree_node=False, default="rank")
+    # Discount used by the "differential" gini reward's potential-based shaping term
+    # (G_old - gamma*G_new). Must match the PPO discount --gamma for the shaping to be
+    # optimal-policy-preserving (Ng 1999). Static: a compile-time constant.
+    gamma: float = struct.field(pytree_node=False, default=0.99)
     node_features = ["distrib_chosen", "chosen"]
 
     rewards = ["gini", "distance"]
@@ -120,7 +124,8 @@ class StaticEnvParams:
                next_nb_val_fn: Next_nb_val_fn,
                next_map_fn: Next_map_fn,
                horizon: int = 200,
-               gini_reward_mode: str = "rank") -> 'StaticEnvParams':
+               gini_reward_mode: str = "rank",
+               gamma: float = 0.99) -> 'StaticEnvParams':
         min_max_array = load_min_max_array(filename)
         avg_distance = min_max_array[nb_nodes][0]
         return cls(
@@ -133,7 +138,8 @@ class StaticEnvParams:
             distance_opt_array=min_max_array,
             avg_distance=avg_distance.item(),
             horizon=horizon,
-            gini_reward_mode=gini_reward_mode
+            gini_reward_mode=gini_reward_mode,
+            gamma=gamma
         )
 
 

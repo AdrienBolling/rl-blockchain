@@ -179,7 +179,11 @@ def weighted_rewards(action: jax.Array, old_state: EnvState, new_state: EnvState
     original_gini_reward, gini_value = gini_reward(new_state, params)
     # Fairness *training* signal fed to the gini head (mode-dependent).
     if static_params.gini_reward_mode == "differential":
-        fairness_reward_value = gini_reward(old_state, params)[1] - gini_value
+        # Exact potential-based shaping F = gamma*Phi(s') - Phi(s) with potential
+        # Phi = -relative_gini: F = G_old - gamma*G_new. (The undiscounted G_old - G_new
+        # is only the gamma->1 limit; the gamma factor keeps the shaping strictly
+        # optimal-policy-preserving at gamma<1.) g_new is the already-computed gini_value.
+        fairness_reward_value = gini_reward(old_state, params)[1] - static_params.gamma * gini_value
     elif static_params.gini_reward_mode == "windowed":
         fairness_reward_value = original_gini_reward
     elif static_params.gini_reward_mode == "grad":
