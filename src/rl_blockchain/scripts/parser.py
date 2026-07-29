@@ -197,14 +197,27 @@ def _parse_args() -> Namespace:
     )
     ppo_parser.add_argument(
         "--gini-reward-mode",
-        choices=["rank", "differential", "windowed", "grad"],
+        choices=["rank", "differential", "differential_shaped", "windowed", "grad"],
         default="differential",
         help="Fairness training signal for the gini head. 'rank': per-step "
              "action-attributable stake-rank surrogate. 'differential' (default): potential-based "
-             "per-step decrease of the true windowed gini (G_t - G_{t+1}); GAE re-integrates "
-             "it. 'windowed': the original level reward (1 - relative_gini) -- integrative, "
-             "needs --gini-lambda 0. 'grad': jax.grad of the new relative gini w.r.t. the "
-             "action. The monitored env/gini metric is the true windowed gini in all cases.",
+             "per-step decrease of the true windowed gini (G_t - gamma*G_{t+1}); GAE re-integrates "
+             "it (replaces the level -> return is endpoint-only). 'differential_shaped': the "
+             "level reward PLUS beta * that shaping term (--gini-shaping-beta) -- keeps the true "
+             "windowed-gini objective and adds the dense per-step signal. 'windowed': the "
+             "original level reward (1 - relative_gini) -- integrative, needs --gini-lambda 0. "
+             "'grad': jax.grad of the new relative gini w.r.t. the action. The monitored "
+             "env/gini metric is the true windowed gini in all cases.",
+    )
+    ppo_parser.add_argument(
+        "--gini-shaping-beta",
+        type=float,
+        default=1.0,
+        help="Weight of the potential-based shaping term in --gini-reward-mode "
+             "differential_shaped: r = (1 - G_new) + beta*(G_old - gamma*G_new). beta scales "
+             "the potential, so the shaping stays optimal-policy-preserving for any beta -- it "
+             "only tunes densification strength. beta=0 recovers 'windowed', large beta "
+             "approaches 'differential'. Ignored by other modes. Default 1.0.",
     )
     ppo_parser.add_argument(
         "--gat-arch",

@@ -169,21 +169,23 @@ def weighted_rewards(action: jax.Array, old_state: EnvState, new_state: EnvState
                      static_params: StaticEnvParams) -> tuple[jax.Array, Dict[str, jax.Array]]:
     # Monitored metric is always the true windowed relative gini (unchanged). The
     # fairness *training* signal is selected by static_params.gini_reward_mode:
-    #   "rank"         -> per-step action-attributable stake-rank surrogate (default)
-    #   "differential" -> potential-based per-step decrease of the true windowed gini
-    #   "windowed"     -> the original level reward (1 - relative_gini, post-filtered);
-    #                     integrative, so needs --gini-lambda 0 to learn
-    #   "grad"         -> jax.grad of the new relative gini w.r.t. the action
+    #   "rank"               -> per-step action-attributable stake-rank surrogate (default)
+    #   "differential"       -> potential-based per-step decrease of the true windowed gini
+    #                           (replaces the level; return is endpoint-only)
+    #   "differential_shaped"-> level + beta * potential-based shaping: keeps the true
+    #                           windowed-gini objective AND adds the dense shaping term
+    #   "windowed"           -> the original level reward (1 - relative_gini, post-filtered);
+    #                           integrative, so needs --gini-lambda 0 to learn
+    #   "grad"               -> jax.grad of the new relative gini w.r.t. the action
     # Original windowed gini level reward (1 - relative_gini, post-filtered) + the
     # monitored relative gini. Logged regardless of mode so runs stay comparable.
     original_gini_reward, gini_value = gini_reward(new_state, params)
     # Fairness *training* signal fed to the gini head (mode-dependent).
     if static_params.gini_reward_mode == "differential":
-        # Exact potential-based shaping F = gamma*Phi(s') - Phi(s) with potential
-        # Phi = -relative_gini: F = G_old - gamma*G_new. (The undiscounted G_old - G_new
-        # is only the gamma->1 limit; the gamma factor keeps the shaping strictly
-        # optimal-policy-preserving at gamma<1.) g_new is the already-computed gini_value.
         fairness_reward_value = gini_reward(old_state, params)[1] - static_params.gamma * gini_value
+    elif static_params.gini_reward_mode == "differential_shaped":
+        shaping = gini_reward(old_state, params)[1] - static_params.gamma * gini_value
+        fairness_reward_value = original_gini_reward + static_params.shaping_beta * shaping
     elif static_params.gini_reward_mode == "windowed":
         fairness_reward_value = original_gini_reward
     elif static_params.gini_reward_mode == "grad":

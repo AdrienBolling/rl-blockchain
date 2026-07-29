@@ -171,7 +171,8 @@ def get_env_config(ARGS: Namespace, key_param: jax.Array) \
                   "reward_weights": ARGS.reward_weights, "next_val_type": ARGS.update_params,
                   "next_edge_type": ARGS.next_edge_type, "horizon": horizon,
                   "gini_reward_mode": getattr(ARGS, "gini_reward_mode", "rank"),
-                  "gamma": getattr(ARGS, "gamma", 0.99)}
+                  "gamma": getattr(ARGS, "gamma", 0.99),
+                  "shaping_beta": getattr(ARGS, "gini_shaping_beta", 1.0)}
     elif env_name == "blockenv_close_map":
         assert ARGS.ref_map_file is not None, "ref_map_file must be provided for blockenv_close_map"
         config = {"gat_arch": ARGS.gat_arch, "voting_nodes": ARGS.voting_nodes,
@@ -179,7 +180,8 @@ def get_env_config(ARGS: Namespace, key_param: jax.Array) \
                   "next_val_type": ARGS.update_params, "next_edge_type": ARGS.next_edge_type,
                   "horizon": horizon,
                   "gini_reward_mode": getattr(ARGS, "gini_reward_mode", "rank"),
-                  "gamma": getattr(ARGS, "gamma", 0.99)}
+                  "gamma": getattr(ARGS, "gamma", 0.99),
+                  "shaping_beta": getattr(ARGS, "gini_shaping_beta", 1.0)}
     elif env_name == "cartpole":
         config = {}
     else:

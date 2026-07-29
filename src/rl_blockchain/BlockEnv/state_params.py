@@ -109,11 +109,17 @@ class StaticEnvParams:
     # "rank" (action-attributable stake-rank surrogate) or "differential" (per-step
     # decrease of the true windowed gini, potential-based). Static so it can drive a
     # trace-time branch inside the jitted weighted_rewards.
-    gini_reward_mode: str = struct.field(pytree_node=False, default="rank")
+    gini_reward_mode: str = struct.field(pytree_node=False, default="differential")
     # Discount used by the "differential" gini reward's potential-based shaping term
     # (G_old - gamma*G_new). Must match the PPO discount --gamma for the shaping to be
     # optimal-policy-preserving (Ng 1999). Static: a compile-time constant.
     gamma: float = struct.field(pytree_node=False, default=0.99)
+    # Weight of the potential-based shaping term in the "differential_shaped" gini
+    # reward: r = (1 - G_new) + beta * (G_old - gamma*G_new). beta scales the potential
+    # (beta*Phi is still a valid potential), so the shaping stays optimal-policy-
+    # preserving for ANY beta -- it only tunes densification strength. beta=0 recovers
+    # "windowed", beta->inf (up to whitening) recovers "differential". Static constant.
+    shaping_beta: float = struct.field(pytree_node=False, default=1.0)
     node_features = ["distrib_chosen", "chosen"]
 
     rewards = ["gini", "distance"]
@@ -125,7 +131,8 @@ class StaticEnvParams:
                next_map_fn: Next_map_fn,
                horizon: int = 200,
                gini_reward_mode: str = "rank",
-               gamma: float = 0.99) -> 'StaticEnvParams':
+               gamma: float = 0.99,
+               shaping_beta: float = 1.0) -> 'StaticEnvParams':
         min_max_array = load_min_max_array(filename)
         avg_distance = min_max_array[nb_nodes][0]
         return cls(
@@ -139,7 +146,8 @@ class StaticEnvParams:
             avg_distance=avg_distance.item(),
             horizon=horizon,
             gini_reward_mode=gini_reward_mode,
-            gamma=gamma
+            gamma=gamma,
+            shaping_beta=shaping_beta
         )
 
 

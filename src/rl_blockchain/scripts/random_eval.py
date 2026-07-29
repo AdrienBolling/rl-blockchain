@@ -48,12 +48,11 @@ def _parse_args() -> argparse.Namespace:
                    help=UpdateDistStrat.help("Update strategy for edges at each step"))
     p.add_argument("--ref-map-file", type=pathlib.Path, default=None,
                    help="Reference map file (only for env=blockenv_close_map).")
-    # gini_reward_mode only changes the (non-comparator) fairness_reward/weighted_reward
-    # columns -- the honest metrics (gini/distance/weighted_original_reward) are
-    # mode-independent. Exposed so the baseline's fairness_reward can be reported in the
-    # same mode as the trained runs it is compared against (e.g. differential -> ~0).
-    p.add_argument("--gini-reward-mode", choices=["rank", "differential", "windowed", "grad"],
+    p.add_argument("--gini-reward-mode",
+                   choices=["rank", "differential", "differential_shaped", "windowed", "grad"],
                    default="windowed")
+    p.add_argument("--gini-shaping-beta", type=float, default=1.0,
+                   help="Shaping weight for --gini-reward-mode differential_shaped (see PPO parser).")
     # Eval knobs.
     p.add_argument("--eval-episodes", type=int, default=100)
     p.add_argument("--batch-size", type=int, default=10)
