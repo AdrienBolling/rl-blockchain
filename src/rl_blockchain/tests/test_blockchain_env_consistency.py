@@ -75,6 +75,7 @@ def test_step_with_legal_action_returns_valid_transition():
     expected_info_keys = {
         "gini",
         "fairness_reward",
+        "fairness_shaping",
         "gini_reward",
         "distance",
         "distance_reward",

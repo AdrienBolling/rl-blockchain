@@ -539,12 +539,17 @@ def train_epoch(ppo_state: PPOState, epoch: int, env: environment.Environment, m
     if log_fn is not None:
         value_mean = vals.mean(axis=(0, 1))   # (2,) [gini, distance]
         adv_std = comp_std.reshape(2)         # (2,) pre-whitening, [gini, distance]
+        std_level = infos_env["gini_reward"].std()
+        std_shaping = infos_env["fairness_shaping"].std()
         wandb.log({"decomp": {
             "value_mean_gini": value_mean[0],
             "value_mean_distance": value_mean[1],
             "adv_std_gini": adv_std[0],
             "adv_std_distance": adv_std[1],
             "adv_std_ratio_gini_over_distance": adv_std[0] / (adv_std[1] + 1e-8),
+            "std_level": std_level,
+            "std_shaping": std_shaping,
+            "beta_star": std_level / (std_shaping + 1e-8),
         }}, step=env_step)
 
     # Flatten data

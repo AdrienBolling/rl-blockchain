@@ -180,12 +180,14 @@ def weighted_rewards(action: jax.Array, old_state: EnvState, new_state: EnvState
     # Original windowed gini level reward (1 - relative_gini, post-filtered) + the
     # monitored relative gini. Logged regardless of mode so runs stay comparable.
     original_gini_reward, gini_value = gini_reward(new_state, params)
+    fairness_shaping = jnp.zeros_like(gini_value)
     # Fairness *training* signal fed to the gini head (mode-dependent).
     if static_params.gini_reward_mode == "differential":
-        fairness_reward_value = gini_reward(old_state, params)[1] - static_params.gamma * gini_value
+        fairness_shaping = gini_reward(old_state, params)[1] - static_params.gamma * gini_value
+        fairness_reward_value = fairness_shaping
     elif static_params.gini_reward_mode == "differential_shaped":
-        shaping = gini_reward(old_state, params)[1] - static_params.gamma * gini_value
-        fairness_reward_value = original_gini_reward + static_params.shaping_beta * shaping
+        fairness_shaping = gini_reward(old_state, params)[1] - static_params.gamma * gini_value
+        fairness_reward_value = original_gini_reward + static_params.shaping_beta * fairness_shaping
     elif static_params.gini_reward_mode == "windowed":
         fairness_reward_value = original_gini_reward
     elif static_params.gini_reward_mode == "grad":
@@ -200,6 +202,7 @@ def weighted_rewards(action: jax.Array, old_state: EnvState, new_state: EnvState
     weighted_original_sum = (jnp.array([original_gini_reward, distance_reward_value]) * params.rewards_weights).sum()
     return weighted_value_sum, {"gini": gini_value,
                                 "fairness_reward": fairness_reward_value,
+                                "fairness_shaping": fairness_shaping,
                                 "gini_reward": original_gini_reward,
                                 "distance": avg_value,
                                 "distance_reward": distance_reward_value,
@@ -211,6 +214,7 @@ def null_reward() -> tuple[jax.Array, Dict[str, jax.Array]]:
     return jnp.array(0.0, dtype=jnp.float32), {
         "gini": jnp.array(0, dtype=jnp.float32),
         "fairness_reward": jnp.array(0, dtype=jnp.float32),
+        "fairness_shaping": jnp.array(0, dtype=jnp.float32),
         "gini_reward": jnp.array(0, dtype=jnp.float32),
         "distance": jnp.array(0, dtype=jnp.float32),
         "distance_reward": jnp.array(0, dtype=jnp.float32),
