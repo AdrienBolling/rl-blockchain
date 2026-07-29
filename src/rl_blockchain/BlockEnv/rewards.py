@@ -183,10 +183,10 @@ def weighted_rewards(action: jax.Array, old_state: EnvState, new_state: EnvState
     fairness_shaping = jnp.zeros_like(gini_value)
     # Fairness *training* signal fed to the gini head (mode-dependent).
     if static_params.gini_reward_mode == "differential":
-        fairness_shaping = gini_reward(old_state, params)[1] - static_params.gamma * gini_value
+        fairness_shaping = static_params.gamma * original_gini_reward - gini_reward(old_state, params)[0]
         fairness_reward_value = fairness_shaping
     elif static_params.gini_reward_mode == "differential_shaped":
-        fairness_shaping = gini_reward(old_state, params)[1] - static_params.gamma * gini_value
+        fairness_shaping = static_params.gamma * original_gini_reward - gini_reward(old_state, params)[0]
         fairness_reward_value = original_gini_reward + static_params.shaping_beta * fairness_shaping
     elif static_params.gini_reward_mode == "windowed":
         fairness_reward_value = original_gini_reward
