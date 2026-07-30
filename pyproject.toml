@@ -28,6 +28,7 @@ default-groups = []
 [dependency-groups]
 dev = [
     "notebook>=7.4.2",
+    "pandas-stubs~=3.0.5",
     "snakeviz>=2.2.2",
     "tensorboard>=2.19.0",
     "tensorboard-plugin-profile>=2.19.6",

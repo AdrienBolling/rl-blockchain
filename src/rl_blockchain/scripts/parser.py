@@ -307,7 +307,9 @@ def _parse_args() -> Namespace:
         nargs="+",
         type=float,
         default=[0.0003],
-        help="Learning rate for the optimizer. Default is 0.0003.",
+        help="Learning rate for the optimizer. Accepts several values to build a "
+             "piecewise-linear schedule over the epochs (evenly spaced knots). "
+             "Default is 0.0003 (constant).",
     )
     train_parser.add_argument(
         "--gamma",
@@ -338,7 +340,8 @@ def _parse_args() -> Namespace:
         nargs="+",
         type=float,
         default=[0.2],
-        help="PPO clip ratio. Default is 0.2.",
+        help="PPO clip ratio. Accepts several values to build a piecewise-linear "
+             "schedule over the epochs (evenly spaced knots). Default is 0.2 (constant).",
     )
     train_parser.add_argument(
         "--value-coef",
@@ -351,7 +354,10 @@ def _parse_args() -> Namespace:
         nargs="+",
         type=float,
         default=[0.01],
-        help="Coefficient for the entropy loss. Default is 0.01.",
+        help="Coefficient for the entropy loss. Accepts several values to build a "
+             "piecewise-linear schedule over the epochs, with evenly spaced knots: "
+             "'0.01 0.001 0' holds 0.01 at epoch 0, 0.001 at mid-training and 0 at "
+             "the last epoch. Default is 0.01 (constant).",
     )
     train_parser.add_argument(
         "--checkpoint",

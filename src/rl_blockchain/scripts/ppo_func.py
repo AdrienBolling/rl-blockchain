@@ -7,6 +7,7 @@ from typing import Callable, Tuple
 import flax
 import jax
 import jax.numpy as jnp
+import numpy as np
 import orbax.checkpoint as ocp
 import pandas as pd
 import wandb
@@ -26,13 +27,19 @@ logger = logging.getLogger(__name__)
 
 
 def make_fct_value(inputs: list[float], nb_step: int) -> Callable[[int], float]:
-    if len(inputs) == 1:
+    """Piecewise-linear schedule over the ``nb_step`` epochs.
+
+    One value is a constant, two values give a single affine ramp from the first
+    to the second, and n values chain n-1 affine segments over evenly spaced
+    knots: ``0.01 0.001 0`` decays to 0.001 at mid-training then down to 0.
+    """
+    if len(inputs) == 0:
+        raise ValueError("Empty schedule: at least one value is required")
+    if len(inputs) == 1 or nb_step <= 1:
         return lambda _: inputs[0]
-    elif len(inputs) == 2:
-        init = inputs[0]
-        last_value = inputs[1]
-        return lambda x: init + (last_value - init) * (x / (nb_step - 1))
-    raise ValueError("Unexpected number of inputs: {}, must be 1 or 2".format(len(inputs)))
+    knots = np.linspace(0.0, nb_step - 1, len(inputs))
+    values = np.asarray(inputs, dtype=np.float64)
+    return lambda x: float(np.interp(x, knots, values))
 
 
 def make_fct_value_array(inputs: list[float], nb_step: int) -> Callable[[int], jax.Array]:
