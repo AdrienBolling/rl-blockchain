@@ -88,12 +88,22 @@ def rollout(key_input, env: environment.Environment,
     return observations, perms, logps, rewards, dones, values, last_value, infos
 
 
-@partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode'))
+@partial(jax.jit, static_argnames=('model', 'env', 'steps_in_episode', 'stochastic'))
 def rollout_eval(key_input, env: environment.Environment,
                  model: nn.Module, ppo_state: PPOState,
                  env_params_episode: EnvParams,
-                 steps_in_episode: int):
-    """Rollout a jitted gymnax episode with lax.scan."""
+                 steps_in_episode: int, stochastic: bool = False):
+    """Rollout a jitted gymnax episode with lax.scan.
+
+    ``stochastic`` selects the action rule, and for a *fairness* objective the two are
+    not interchangeable. The windowed gini can only be low if the committee rotates
+    across steps, and a policy can get that either from flat logits + sampling or from
+    state-dependent ranking (``distrib_chosen`` is in the observation). Only the latter
+    survives the mode: near-uniform logits differ by noise that is stable while the
+    observation drifts slowly, so ``mode_subset`` replays the same top-k every step and
+    concentrates all stake on k nodes. Default False (mode) keeps the historical eval;
+    pass True to reproduce the train-time draw and measure the gap.
+    """
     # Reset the environment
     key_reset, key_episode = jax.random.split(key_input)
     first_obs, first_state = env.reset(key_reset, env_params_episode)
@@ -103,7 +113,10 @@ def rollout_eval(key_input, env: environment.Environment,
         obs, state, key = state_input
         next_key, key_step, key_net = jax.random.split(key, 3)
         _, action_distribution = model.apply(ppo_state.params, obs)
-        action = mode_subset(action_distribution, state.nb_val)
+        if stochastic:
+            _, action, _ = sample_subset_with_logp(key_net, action_distribution, state.nb_val)
+        else:
+            action = mode_subset(action_distribution, state.nb_val)
 
         next_obs, next_state, reward, done, infos = env.step(
             key_step, state, action, env_params_episode
@@ -146,11 +159,17 @@ def _vectorized_rollout(env, model, steps_in_episode: int):
 
 
 @lru_cache(maxsize=None)
-def _vectorized_rollout_eval(env, model, steps_in_episode: int):
-    """Same as :func:`_vectorized_rollout` for the deterministic eval rollout."""
+def _vectorized_rollout_eval(env, model, steps_in_episode: int, stochastic: bool = False):
+    """Same as :func:`_vectorized_rollout` for the eval rollout.
+
+    ``stochastic`` is part of the cache key (and a static arg of ``rollout_eval``), so
+    the mode and sampled variants get one compiled executable each rather than sharing
+    or thrashing one.
+    """
 
     def single(rng, ppo_state, new_param):
-        return rollout_eval(rng, env, model, ppo_state, new_param, steps_in_episode)
+        return rollout_eval(rng, env, model, ppo_state, new_param, steps_in_episode,
+                            stochastic)
 
     return jax.jit(jax.vmap(single, in_axes=(0, None, 0)))
 
@@ -657,10 +676,10 @@ def eval_ppo(ppo_state: PPOState, env: environment.Environment, model: nn.Module
              create_params_fn: Callable[[jax.Array], TEnvParams],
              num_episodes: int = 10,
              recorded_episodes: int = 10, batch_size: int = 10,
-             log_fn: LOG_TYPE = None) -> dict[str, jax.Array]:
+             log_fn: LOG_TYPE = None, stochastic: bool = False) -> dict[str, jax.Array]:
     steps_in_episode = int(env.default_params.max_steps_in_episode)
 
-    vm_rollouts = _vectorized_rollout_eval(env, model, steps_in_episode)
+    vm_rollouts = _vectorized_rollout_eval(env, model, steps_in_episode, stochastic)
     params_map = jax.vmap(create_params_fn)
 
     all_rewards = []

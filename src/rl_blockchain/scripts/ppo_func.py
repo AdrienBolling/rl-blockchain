@@ -143,7 +143,8 @@ def train_ppo(ARGS: Namespace):
                     num_episodes=ARGS.eval_episodes,
                     recorded_episodes=5,
                     batch_size=min(num_envs, ARGS.eval_episodes),
-                    log_fn=log_fn
+                    log_fn=log_fn,
+                    stochastic=getattr(ARGS, "eval_stochastic", False)
                 )
 
                 wandb.log({"eval": metrics}, step=env_step)
@@ -215,7 +216,8 @@ def eval_ppo_run(args: Namespace):
         create_params_fn=create_params_fn,
         num_episodes=args.eval_episodes,
         recorded_episodes=5,
-        log_fn=log_fn
+        log_fn=log_fn,
+        stochastic=getattr(args, "eval_stochastic", False)
     )
 
     # Write the aggregate results to JSON (same spirit as simple_eval): no wandb.
@@ -238,6 +240,11 @@ def eval_ppo_run(args: Namespace):
         "checkpoint_step": args.checkpoint_step,  # None => latest
         "gini_reward_mode": gini_reward_mode,
         "gini_lambda": gini_lambda,
+        # Eval-time action rule, NOT a model config key: deliberately taken from the
+        # command line rather than the saved run config, so the same checkpoint can be
+        # evaluated both ways. Recorded because it changes `gini` enough to make rows
+        # incomparable across settings.
+        "eval_stochastic": bool(getattr(args, "eval_stochastic", False)),
         "seed": args.seed,
         "num_episodes": args.eval_episodes,
         "n_nodes": args.n_nodes,
@@ -250,7 +257,10 @@ def eval_ppo_run(args: Namespace):
         "metrics": metrics_f,
     }
 
-    out_path = args.output or pathlib.Path(f"eval_{checkpoint_name}.json")
+    # Suffix the default name so evaluating one checkpoint both ways does not have the
+    # second run silently overwrite the first. An explicit --output still wins.
+    _suffix = "_stochastic" if getattr(args, "eval_stochastic", False) else ""
+    out_path = args.output or pathlib.Path(f"eval_{checkpoint_name}{_suffix}.json")
     out_path.write_text(json.dumps(results, indent=2))
 
     # Also emit a one-row CSV (flat) so the 12 runs concat/merge trivially in pandas:
@@ -259,6 +269,7 @@ def eval_ppo_run(args: Namespace):
         "model": checkpoint_name,
         "gini_reward_mode": gini_reward_mode,
         "gini_lambda": gini_lambda,
+        "eval_stochastic": bool(getattr(args, "eval_stochastic", False)),
         "reward_weight_gini": reward_weights[0] if len(reward_weights) > 0 else None,
         "reward_weight_distance": reward_weights[1] if len(reward_weights) > 1 else None,
         "seed": args.seed,

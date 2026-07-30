@@ -193,7 +193,12 @@ def _parse_args() -> Namespace:
         nargs="+",
         type=float,
         default=[0.5, 0.5],
-        help="Weights for the rewards as space separated values. Default is [0.5, 0.5].",
+        help="Weights for the rewards as space separated values, in the order "
+             "[gini, distance] (StaticEnvParams.rewards, matching the component order "
+             "of the decomposed critic and of the per-component advantages). Normalized "
+             "to sum to 1, so '1 1' and '0.5 0.5' are equivalent. Because each component "
+             "is whitened to unit scale before weighting, these are true relative "
+             "priorities rather than raw reward scalings. Default is [0.5, 0.5].",
     )
     ppo_parser.add_argument(
         "--gini-reward-mode",
@@ -232,6 +237,20 @@ def _parse_args() -> Namespace:
         type=int,
         default=100,
         help="Number of episodes to run for evaluation. Default is 10.",
+    )
+
+    ppo_parser.add_argument(
+        "--eval-stochastic",
+        action="store_true",
+        help="Sample the eval committee from the policy (as at TRAIN time) instead of "
+             "taking the deterministic top-k mode. Off by default so existing numbers "
+             "stay comparable. Matters for the fairness metric: the windowed gini can "
+             "only be low if the committee ROTATES, and a policy may achieve that "
+             "either by flat logits + sampling (which argmax eval destroys -- it then "
+             "replays the same top-k every step and gini goes to worst-case) or by "
+             "state-dependent rotation via distrib_chosen (which survives argmax). "
+             "Run both to tell those two apart: a large gini gap means the policy is "
+             "fair only through its sampling entropy.",
     )
 
     ppo_parser.add_argument(
