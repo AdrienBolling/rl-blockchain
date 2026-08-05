@@ -2,6 +2,7 @@ import os
 import pathlib
 from argparse import ArgumentParser, Namespace, ArgumentTypeError
 from enum import Enum
+from itertools import chain
 
 REF_FILENAME = {
     7: "ref_grid_min_max/grid_7.csv",
@@ -39,7 +40,7 @@ class ArgparseEnum(Enum):
             )
 
     @classmethod
-    def help(cls, desc:str) -> str:
+    def help(cls, desc: str) -> str:
         return (
                 f"{desc}. "
                 "Allowed values: "
@@ -57,6 +58,19 @@ class UpdateValStrat(ArgparseEnum):
 class UpdateDistStrat(ArgparseEnum):
     NO_UPDATE = 0
     ORN_UHL_UPDATE = 1
+
+
+class EvalMode(ArgparseEnum):
+    ALL = 0
+    GREEDY = 1
+    STOCHASTIC = 2
+
+    @classmethod
+    def parse(cls, value: str) -> list["EvalMode"]:
+        mode = super().parse(value)
+        if mode == cls.ALL:
+            return [m for m in cls if m != cls.ALL]
+        return [mode]
 
 
 def _parse_args() -> Namespace:
@@ -240,17 +254,17 @@ def _parse_args() -> Namespace:
     )
 
     ppo_parser.add_argument(
-        "--eval-stochastic",
-        action="store_true",
-        help="Sample the eval committee from the policy (as at TRAIN time) instead of "
-             "taking the deterministic top-k mode. Off by default so existing numbers "
-             "stay comparable. Matters for the fairness metric: the windowed gini can "
-             "only be low if the committee ROTATES, and a policy may achieve that "
-             "either by flat logits + sampling (which argmax eval destroys -- it then "
-             "replays the same top-k every step and gini goes to worst-case) or by "
-             "state-dependent rotation via distrib_chosen (which survives argmax). "
-             "Run both to tell those two apart: a large gini gap means the policy is "
-             "fair only through its sampling entropy.",
+        "--eval-mode",
+        type=EvalMode.parse,
+        nargs="+",
+        default=[EvalMode.parse("ALL")],
+        help=EvalMode.help(
+            "Action rule(s) used to evaluate, at each --eval-interval and in 'eval' "
+            "mode. GREEDY is the deterministic top-k, STOCHASTIC the train-time draw, "
+            "ALL both. Several rules run on the same episodes, so a large gini gap "
+            "between them means the policy is fair only through its sampling entropy. "
+            "Training logs to wandb under eval_<rule>/* plus eval_gap_<a>_<b>/* for "
+            "each pair; 'eval' mode writes one JSON+CSV per rule"),
     )
 
     ppo_parser.add_argument(
@@ -445,4 +459,7 @@ def _parse_args() -> Namespace:
              "'eval_<checkpoint-name>.json' in the cwd.",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    # nargs + a list-returning type gives a list of groups: flatten to the rules to run.
+    args.eval_mode = list(dict.fromkeys(chain.from_iterable(args.eval_mode)))
+    return args

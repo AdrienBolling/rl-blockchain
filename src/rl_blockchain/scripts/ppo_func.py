@@ -2,6 +2,7 @@ import json
 import logging
 import pathlib
 from argparse import Namespace
+from itertools import combinations
 from typing import Callable, Tuple
 
 import flax
@@ -20,6 +21,7 @@ from rl_blockchain.algo.ppo import create_checkpoint_manager, create_ppo_state, 
     latest_checkpoint_step, make_optimizer
 from rl_blockchain.algo.ppo import eval_ppo
 from rl_blockchain.scripts.env_factory import GenericEnvFactory, LOG_TYPE
+from rl_blockchain.scripts.parser import EvalMode
 from rl_blockchain.utils.run_config import apply_model_config, save_run_config, load_run_config
 from rl_blockchain.utils.run_counter import project_dir
 
@@ -140,10 +142,11 @@ def train_ppo(ARGS: Namespace):
             key, _ = jax.random.split(key)
             if epoch % ARGS.eval_interval == 0:
                 logger.info(f"Evaluating PPO agent at epoch {epoch + 1}/{num_epochs}")
-                # Evaluate the PPO agent
-                metrics = eval_ppo(
-                    ppo_state=ppo_state,
+                # Same key for every rule, so they see the same episodes.
+                results = {mode: eval_ppo(
                     key=key_eval,
+                    mode=mode,
+                    ppo_state=ppo_state,
                     env=env,
                     model=model,
                     create_params_fn=create_params_fn,
@@ -151,11 +154,15 @@ def train_ppo(ARGS: Namespace):
                     recorded_episodes=5,
                     batch_size=min(num_envs, ARGS.eval_episodes),
                     log_fn=log_fn,
-                    stochastic=getattr(ARGS, "eval_stochastic", False)
-                )
+                ) for mode in ARGS.eval_mode}
+                for mode, metrics in results.items():
+                    logger.info(f"eval[{mode}]: {metrics}")
 
-                wandb.log({"eval": metrics}, step=env_step)
-                logger.info(metrics)
+                eval_log = {f"eval_{m.name.lower()}": v for m, v in results.items()}
+                for (a, ma), (b, mb) in combinations(results.items(), 2):
+                    eval_log[f"eval_gap_{a.name.lower()}_{b.name.lower()}"] = \
+                        {k: mb[k] - ma[k] for k in ma}
+                wandb.log(eval_log, step=env_step)
 
             # Save the checkpoint
             checkpoint_manager.save(step=epoch, args=ocp.args.StandardSave(ppo_state))
@@ -214,19 +221,6 @@ def eval_ppo_run(args: Namespace):
     ppo_state = create_ppo_state(resume_dir=chkpt_dir, env=env, seed=args.seed, lr=1e-3,
                                  model=model, step=args.checkpoint_step)
 
-    # Evaluate the PPO agent
-    metrics = eval_ppo(
-        ppo_state=ppo_state,
-        env=env,
-        key=key_eval,
-        model=model,
-        create_params_fn=create_params_fn,
-        num_episodes=args.eval_episodes,
-        recorded_episodes=5,
-        log_fn=log_fn,
-        stochastic=getattr(args, "eval_stochastic", False)
-    )
-
     # Write the aggregate results to JSON (same spirit as simple_eval): no wandb.
     checkpoint_name = chkpt_dir.resolve().name
     # Pull the training-time labels from the saved run config so rows are correctly
@@ -240,54 +234,59 @@ def eval_ppo_run(args: Namespace):
         gini_lambda = saved_cfg.get("lambda_", getattr(args, "lambda_", None))
     reward_weights = [float(w) for w in args.reward_weights]
 
-    metrics_f = {k: float(v) for k, v in metrics.items()}
-    results = {
-        "model": checkpoint_name,
-        "checkpoint_dir": str(chkpt_dir.resolve()),
-        "checkpoint_step": args.checkpoint_step,  # None => latest
-        "gini_reward_mode": gini_reward_mode,
-        "gini_lambda": gini_lambda,
-        # Eval-time action rule, NOT a model config key: deliberately taken from the
-        # command line rather than the saved run config, so the same checkpoint can be
-        # evaluated both ways. Recorded because it changes `gini` enough to make rows
-        # incomparable across settings.
-        "eval_stochastic": bool(getattr(args, "eval_stochastic", False)),
-        "seed": args.seed,
-        "num_episodes": args.eval_episodes,
-        "n_nodes": args.n_nodes,
-        "horizon": getattr(args, "horizon", 200),
-        "reward_weights": reward_weights,
-        # Every aggregate metric eval_ppo produced. The mode-INDEPENDENT comparables
-        # across runs are `gini`, `distance` and `weighted_original_reward`; the
-        # mode-dependent `fairness_reward`/`weighted_reward` are only meaningful within
-        # a single mode.
-        "metrics": metrics_f,
-    }
+    # Same key for every rule, so they see the same episodes.
+    for mode in args.eval_mode:
+        metrics = eval_ppo(
+            ppo_state=ppo_state,
+            env=env,
+            key=key_eval,
+            mode=mode,
+            model=model,
+            create_params_fn=create_params_fn,
+            num_episodes=args.eval_episodes,
+            recorded_episodes=5,
+            log_fn=log_fn,
+        )
 
-    # Suffix the default name so evaluating one checkpoint both ways does not have the
-    # second run silently overwrite the first. An explicit --output still wins.
-    _suffix = "_stochastic" if getattr(args, "eval_stochastic", False) else ""
-    out_path = args.output or pathlib.Path(f"eval_{checkpoint_name}{_suffix}.json")
-    out_path.write_text(json.dumps(results, indent=2))
+        metrics_f = {k: float(v) for k, v in metrics.items()}
+        results = {
+            "model": checkpoint_name,
+            "checkpoint_dir": str(chkpt_dir.resolve()),
+            "checkpoint_step": args.checkpoint_step,  # None => latest
+            "gini_reward_mode": gini_reward_mode,
+            "gini_lambda": gini_lambda,
+            "eval_mode": str(mode),
+            "seed": args.seed,
+            "num_episodes": args.eval_episodes,
+            "n_nodes": args.n_nodes,
+            "horizon": getattr(args, "horizon", 200),
+            "reward_weights": reward_weights,
+            "metrics": metrics_f,
+        }
 
-    # Also emit a one-row CSV (flat) so the 12 runs concat/merge trivially in pandas:
-    #   pd.concat([pd.read_csv(f) for f in glob("eval_*.csv")])
-    row = {
-        "model": checkpoint_name,
-        "gini_reward_mode": gini_reward_mode,
-        "gini_lambda": gini_lambda,
-        "eval_stochastic": bool(getattr(args, "eval_stochastic", False)),
-        "reward_weight_gini": reward_weights[0] if len(reward_weights) > 0 else None,
-        "reward_weight_distance": reward_weights[1] if len(reward_weights) > 1 else None,
-        "seed": args.seed,
-        "n_nodes": args.n_nodes,
-        "horizon": getattr(args, "horizon", 200),
-        "num_episodes": args.eval_episodes,
-        "checkpoint_step": args.checkpoint_step,
-        **metrics_f,
-    }
-    csv_path = out_path.with_suffix(".csv")
-    pd.DataFrame([row]).to_csv(csv_path, index=False)
+        # Suffixed so evaluating several rules never overwrites the previous one.
+        out_path = args.output or pathlib.Path(f"eval_{checkpoint_name}.json")
+        out_path = out_path.with_name(f"{out_path.stem}_{mode.name.lower()}{out_path.suffix}")
+        out_path.write_text(json.dumps(results, indent=2))
 
-    logger.info(metrics)
-    print(f"Results written to {out_path.resolve()} and {csv_path.resolve()}")
+        # Also emit a one-row CSV (flat) so the 12 runs concat/merge trivially in pandas:
+        #   pd.concat([pd.read_csv(f) for f in glob("eval_*.csv")])
+        row = {
+            "model": checkpoint_name,
+            "gini_reward_mode": gini_reward_mode,
+            "gini_lambda": gini_lambda,
+            "eval_mode": str(mode),
+            "reward_weight_gini": reward_weights[0] if len(reward_weights) > 0 else None,
+            "reward_weight_distance": reward_weights[1] if len(reward_weights) > 1 else None,
+            "seed": args.seed,
+            "n_nodes": args.n_nodes,
+            "horizon": getattr(args, "horizon", 200),
+            "num_episodes": args.eval_episodes,
+            "checkpoint_step": args.checkpoint_step,
+            **metrics_f,
+        }
+        csv_path = out_path.with_suffix(".csv")
+        pd.DataFrame([row]).to_csv(csv_path, index=False)
+
+        logger.info(f"eval[{mode}]: {metrics}")
+        print(f"[{mode}] Results written to {out_path.resolve()} and {csv_path.resolve()}")
