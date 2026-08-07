@@ -11,8 +11,8 @@ profiling_results
 
 # test files
 test.py
-tests.ipynb
-*.ipynb
+#tests.ipynb
+#*.ipynb
 debug*.log
 
 # Cache files
