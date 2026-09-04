@@ -131,6 +131,68 @@ def relative_stake_rank_reward(action: jax.Array, state: EnvState, params: EnvPa
     return reward
 
 
+def _base_stake_distribution(action: jax.Array, state: EnvState) -> tuple[jax.Array, jax.Array]:
+    """Sliding-window stake distribution of ``state`` minus this action's own ring row.
+
+    ``next_state`` *overwrites* row ``time % horizon``, so ``d_new != d_old + increment``.
+    Subtracting the action's row from the post-step distribution gives the
+    action-independent base; then ``dist(next_state(..., S)) == base + increment * 1_S``
+    for any ``S`` of the same cardinality. (Zeroing the row instead divides by 0.)
+
+    :param state: the state *after* ``action`` was applied.
+    :return: ``(base, increment)``, ``increment = n / k`` being the stake a selected node gains.
+    """
+    d_new = get_stake_distribution(state)
+    n = d_new.shape[0]
+    k = action.sum()
+    increment = n / jnp.maximum(k, 1.0)
+    return d_new - increment * action.astype(d_new.dtype), increment
+
+
+def relative_gini_rank_reward(
+    action: jax.Array,
+    state: EnvState,
+    params: EnvParams,
+    static_params: StaticEnvParams,
+) -> jax.Array:
+    """Normalized one-step Gini rank reward, ``(G_worst - G_action) / (G_worst - G_best)``.
+
+    Same normalisation as :func:`relative_stake_rank_reward` but ranking the gini the
+    action actually produces on the window instead of a stake-deficit proxy, so the score
+    is rank-weighted rather than a plain stake sum.
+
+    Bottom-k / top-k are the *exact* argmin / argmax, not a heuristic: swapping an
+    unselected ``i`` for a selected ``j`` with ``b_i <= b_j`` maps the pair
+    ``{b_i, b_j + c}`` to ``{b_i + c, b_j}``, same sum and spread ``|c - (b_j - b_i)|
+    <= c + (b_j - b_i)`` -- a Robin Hood transfer, and gini is Schur-convex. This holds
+    only because every selected node gains the *same* ``c = n / k``. So the reward is a
+    true [0, 1] normalisation and the clip only absorbs float32 noise on ties.
+
+    ``k`` is dynamic, hence the sorted mask over ``lax.top_k``.
+
+    :param state: the state *after* ``action`` was applied.
+    """
+    base, increment = _base_stake_distribution(action, state)
+    n = base.shape[0]
+    k = action.sum()
+
+    sorted_idx = jnp.argsort(base)
+    mask = (jnp.arange(n) < k).astype(base.dtype)
+    best_action = jnp.zeros(n, base.dtype).at[sorted_idx].set(mask)
+    worst_action = jnp.zeros(n, base.dtype).at[sorted_idx[::-1]].set(mask)
+
+    gini_action = gini_coefficient(base + increment * action.astype(base.dtype))
+    gini_best = gini_coefficient(base + increment * best_action)
+    gini_worst = gini_coefficient(base + increment * worst_action)
+
+    # Degenerate when every k-subset is the same action (k == 0 or k == n): stay neutral
+    # instead of letting the epsilon decide.
+    spread = gini_worst - gini_best
+    reward = jnp.where(spread > 1e-6, (gini_worst - gini_action) / spread, 0.5)
+
+    return jnp.clip(reward, 0.0, 1.0)
+
+
 def _relative_gini_of_row(row: jax.Array, ring_float: jax.Array, current_index: jax.Array) -> jax.Array:
     """Windowed ``relative_gini`` after writing ``row`` into a FLOAT ring buffer.
 
@@ -167,18 +229,22 @@ def gini_grad_reward(action: jax.Array, previous_state: EnvState) -> jax.Array:
 @jax.jit
 def weighted_rewards(action: jax.Array, old_state: EnvState, new_state: EnvState, params: EnvParams,
                      static_params: StaticEnvParams) -> tuple[jax.Array, Dict[str, jax.Array]]:
-    # Monitored metric is always the true windowed relative gini (unchanged). The
-    # fairness *training* signal is selected by static_params.gini_reward_mode:
-    #   "rank"               -> per-step action-attributable stake-rank surrogate (default)
-    #   "differential"       -> potential-based per-step decrease of the true windowed gini
-    #                           (replaces the level; return is endpoint-only)
-    #   "differential_shaped"-> level + beta * potential-based shaping: keeps the true
-    #                           windowed-gini objective AND adds the dense shaping term
-    #   "windowed"           -> the original level reward (1 - relative_gini, post-filtered);
-    #                           integrative, so needs --gini-lambda 0 to learn
-    #   "grad"               -> jax.grad of the new relative gini w.r.t. the action
-    # Original windowed gini level reward (1 - relative_gini, post-filtered) + the
-    # monitored relative gini. Logged regardless of mode so runs stay comparable.
+    """Monitored metric is always the true windowed relative gini (unchanged). The
+    fairness *training* signal is selected by static_params.gini_reward_mode:
+      "rank"               -> per-step action-attributable stake-rank surrogate (default)
+      "differential"       -> potential-based per-step decrease of the true windowed gini
+                              (replaces the level; return is endpoint-only)
+      "differential_shaped"-> level + beta * potential-based shaping: keeps the true
+                              windowed-gini objective AND adds the dense shaping term
+      "windowed"           -> the original level reward (1 - relative_gini, post-filtered);
+                              integrative, so needs --gini-lambda 0 to learn
+      "grad"               -> jax.grad of the new relative gini w.r.t. the action
+      "gini_rank"          -> same rank normalisation as "rank" but scoring the one-step
+                              gini the action produces, not a stake-deficit proxy
+      "windowed_rank_mixed"-> convex blend (level + beta * gini_rank) / (1 + beta):
+                              beta=0 recovers "windowed", large beta -> "gini_rank"
+    Original windowed gini level reward (1 - relative_gini, post-filtered) + the
+    monitored relative gini. Logged regardless of mode so runs stay comparable."""
     original_gini_reward, gini_value = gini_reward(new_state, params)
     fairness_shaping = jnp.zeros_like(gini_value)
     # Fairness *training* signal fed to the gini head (mode-dependent).
@@ -192,6 +258,12 @@ def weighted_rewards(action: jax.Array, old_state: EnvState, new_state: EnvState
         fairness_reward_value = original_gini_reward
     elif static_params.gini_reward_mode == "grad":
         fairness_reward_value = gini_grad_reward(action, old_state)
+    elif static_params.gini_reward_mode == "gini_rank":
+        fairness_reward_value = relative_gini_rank_reward(action, new_state, params, static_params)
+    elif static_params.gini_reward_mode == "windowed_rank_mixed":
+        fairness_shaping = relative_gini_rank_reward(action, new_state, params, static_params)
+        fairness_reward_value = ((original_gini_reward + static_params.shaping_beta * fairness_shaping)
+                                 / (1.0 + static_params.shaping_beta))
     else:
         fairness_reward_value = relative_stake_rank_reward(action, new_state, params, static_params)
     distance_reward_value, avg_value = distance_reward(action, new_state, params, static_params)

@@ -216,7 +216,7 @@ def _parse_args() -> Namespace:
     )
     ppo_parser.add_argument(
         "--gini-reward-mode",
-        choices=["rank", "differential", "differential_shaped", "windowed", "grad"],
+        choices=["rank", "gini_rank", "differential", "differential_shaped", "windowed", "grad", "windowed_rank_mixed"],
         default="differential",
         help="Fairness training signal for the gini head. 'rank': per-step "
              "action-attributable stake-rank surrogate. 'differential' (default): potential-based "
@@ -225,7 +225,13 @@ def _parse_args() -> Namespace:
              "level reward PLUS beta * that shaping term (--gini-shaping-beta) -- keeps the true "
              "windowed-gini objective and adds the dense per-step signal. 'windowed': the "
              "original level reward (1 - relative_gini) -- integrative, needs --gini-lambda 0. "
-             "'grad': jax.grad of the new relative gini w.r.t. the action. The monitored "
+             "'grad': jax.grad of the new relative gini w.r.t. the action. "
+             "'windowed_rank_mixed': convex blend (level + beta*gini_rank)/(1+beta) -- the "
+             "level anchors the true objective and carries an action's multi-step persistence, "
+             "gini_rank supplies the dense per-step gradient. NOT potential-based, so unlike "
+             "differential_shaped beta biases the optimum and must be tuned. 'gini_rank': same "
+             "rank normalisation as 'rank', but scoring the one-step gini the action actually "
+             "produces on the sliding window instead of a stake-deficit proxy. The monitored "
              "env/gini metric is the true windowed gini in all cases.",
     )
     ppo_parser.add_argument(

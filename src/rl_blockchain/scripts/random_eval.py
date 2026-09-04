@@ -49,7 +49,7 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--ref-map-file", type=pathlib.Path, default=None,
                    help="Reference map file (only for env=blockenv_close_map).")
     p.add_argument("--gini-reward-mode",
-                   choices=["rank", "differential", "differential_shaped", "windowed", "grad"],
+                   choices=["rank", "gini_rank", "differential", "differential_shaped", "windowed", "grad", "windowed_rank_mixed"],
                    default="windowed")
     p.add_argument("--gini-shaping-beta", type=float, default=1.0,
                    help="Shaping weight for --gini-reward-mode differential_shaped (see PPO parser).")
